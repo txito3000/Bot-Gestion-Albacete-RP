@@ -1,6 +1,6 @@
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 
-const TOKEN = 'MTQ5MjkxMTMzODQ1OTIzNDMxNA.GxqS4a.1uRtk_8Mqj2RCD5itbHdDtCcVS-FTeIfejeMTU';
+const TOKEN = 'process.env.TOKEN';
 const CLIENT_ID = '1492911338459234314';   // ← ID de tu bot (Application ID)
 const GUILD_ID = '1397737510167117864';    // ← ID del servidor donde quieres los comandos
 

@@ -1,5 +1,10 @@
 // ======================
-// 1. SERVIDOR HTTP PARA RENDER (obligatorio para que Render no mate el bot)
+// 1. CARGAR VARIABLES DE ENTORNO (.env)
+// ======================
+require('dotenv').config();
+
+// ======================
+// 2. SERVIDOR HTTP PARA RENDER (obligatorio)
 // ======================
 const express = require('express');
 const app = express();
@@ -14,7 +19,7 @@ app.listen(PORT, () => {
 });
 
 // ======================
-// 2. BOT DE DISCORD.JS + SISTEMA DE SANCIONES
+// 3. BOT DE DISCORD.JS + SISTEMA DE SANCIONES
 // ======================
 const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, SlashCommandBuilder } = require('discord.js');
 const fs = require('fs');
@@ -56,7 +61,7 @@ function guardarSanciones() {
     }
 }
 
-// ==================== EVENTO READY (combinado) ====================
+// ==================== EVENTO READY ====================
 client.once('ready', async () => {
     cargarSanciones();
     console.log(`✅ Bot conectado como ${client.user.tag}`);
@@ -110,7 +115,7 @@ client.once('ready', async () => {
     }
 });
 
-// ==================== COMANDO DE PRUEBA CON PREFIJO (opcional) ====================
+// ==================== COMANDO DE PRUEBA ====================
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
     if (message.content.toLowerCase() === '!ping') {
@@ -163,7 +168,6 @@ client.on('interactionCreate', async interaction => {
         sanciones[guildId].push(registro);
         guardarSanciones();
 
-        // Embed público
         const embedPublico = new EmbedBuilder()
             .setTitle('📋 Sanción Registrada')
             .setColor(0xFF0000)
@@ -178,7 +182,6 @@ client.on('interactionCreate', async interaction => {
 
         await interaction.reply({ embeds: [embedPublico] });
 
-        // DM al usuario
         const embedDM = new EmbedBuilder()
             .setTitle('📋 Has recibido una sanción')
             .setDescription('Esta sanción ha quedado registrada en el servidor.')
@@ -291,7 +294,7 @@ client.on('interactionCreate', async interaction => {
 });
 
 // ======================
-// 3. LOGIN (TOKEN desde variables de entorno de Render)
+// 4. LOGIN DEL BOT (TOKEN desde .env)
 // ======================
 client.login(process.env.TOKEN)
     .catch(err => {
