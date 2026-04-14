@@ -146,13 +146,11 @@ client.once(Events.ClientReady, async () => {
   cargarIdentidades();
 
   const commands = [
-    // VOTACIONES
     new SlashCommandBuilder().setName('votacion').setDescription('Crea votación de apertura de servidor (30 minutos)'),
     new SlashCommandBuilder().setName('abrirserver').setDescription('Abre el servidor manualmente'),
     new SlashCommandBuilder().setName('cerrarserver').setDescription('Cierra el servidor'),
     new SlashCommandBuilder().setName('cancelarvotacion').setDescription('Cancela la votación activa en este canal'),
-
-    // SANCIONES
+    
     new SlashCommandBuilder()
       .setName('sancionar')
       .setDescription('Registra una sanción')
@@ -168,7 +166,7 @@ client.once(Events.ClientReady, async () => {
             { name: '🚨 Falta Grave', value: 'grave' }
           ))
       .addStringOption(opt => opt.setName('razon').setDescription('Razón de la sanción').setRequired(false)),
-
+    
     new SlashCommandBuilder().setName('sanciones').setDescription('Ver todas las sanciones del servidor'),
     new SlashCommandBuilder()
       .setName('sanciones_usuario')
@@ -182,8 +180,7 @@ client.once(Events.ClientReady, async () => {
       .setName('limpiarsanciones')
       .setDescription('Eliminar TODAS las sanciones de un usuario')
       .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)),
-
-    // PANEL DNI
+    
     new SlashCommandBuilder().setName('panel-dni').setDescription('Crea el panel oficial del sistema de DNI')
   ];
 
@@ -262,6 +259,7 @@ async function handleSancionar(interaction) {
   };
   sanciones[guildId].push(registro);
   guardarSanciones();
+
   const embedPublico = new EmbedBuilder()
     .setTitle('📋 Sanción Registrada')
     .setColor(0xFF0000)
@@ -273,7 +271,9 @@ async function handleSancionar(interaction) {
       { name: 'Razón', value: razon, inline: false }
     )
     .setFooter({ text: `Sanción ID: ${sanctionId}` });
+
   await interaction.reply({ embeds: [embedPublico] });
+
   const embedDM = new EmbedBuilder()
     .setTitle('📋 Has recibido una sanción')
     .setDescription('Esta sanción ha quedado registrada en el servidor.')
@@ -285,6 +285,7 @@ async function handleSancionar(interaction) {
       { name: 'Moderador', value: interaction.user.tag }
     )
     .setFooter({ text: `Servidor: ${interaction.guild.name} | ID: ${sanctionId}` });
+
   try {
     await miembro.send({ embeds: [embedDM] });
   } catch (err) {
@@ -447,10 +448,7 @@ async function handleCancelarVotacion(interaction) {
       new ButtonBuilder().setCustomId('vote_later').setLabel('Me uniré más tarde').setStyle(ButtonStyle.Primary).setEmoji('⏰').setDisabled(true),
       new ButtonBuilder().setCustomId('vote_no').setLabel('No me uniré').setStyle(ButtonStyle.Danger).setEmoji('❌').setDisabled(true)
     );
-    await pollData.message.edit({
-      embeds: [cancelEmbed],
-      components: [disabledRow]
-    });
+    await pollData.message.edit({ embeds: [cancelEmbed], components: [disabledRow] });
     await interaction.editReply({ content: '✅ Votación cancelada correctamente.' });
     await pollData.channel.send('❌ **La votación ha sido cancelada manualmente.**');
   } catch (error) {
@@ -572,10 +570,7 @@ async function cerrarVotacionPorTiempo(messageId) {
       new ButtonBuilder().setCustomId('vote_later').setLabel('Me uniré más tarde').setStyle(ButtonStyle.Primary).setEmoji('⏰').setDisabled(true),
       new ButtonBuilder().setCustomId('vote_no').setLabel('No me uniré').setStyle(ButtonStyle.Danger).setEmoji('❌').setDisabled(true)
     );
-    await pollData.message.edit({
-      embeds: [nuevoEmbed],
-      components: [disabledRow]
-    });
+    await pollData.message.edit({ embeds: [nuevoEmbed], components: [disabledRow] });
     await pollData.channel.send('⏰ **La votación ha expirado** después de 30 minutos.');
   } catch (e) {
     console.error('Error al cerrar votación por tiempo:', e);
@@ -608,13 +603,11 @@ async function handlePanelDni(interaction) {
     new ButtonBuilder().setCustomId('dni-ver').setLabel('Ver DNI').setStyle(ButtonStyle.Secondary).setEmoji('🔎'),
     new ButtonBuilder().setCustomId('dni-borrar').setLabel('Borrar DNI').setStyle(ButtonStyle.Danger).setEmoji('🗑️')
   );
-
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('carnet-crear').setLabel('Crear Carnet Conducir').setStyle(ButtonStyle.Primary).setEmoji('🚗'),
     new ButtonBuilder().setCustomId('carnet-ver').setLabel('Ver Carnet').setStyle(ButtonStyle.Secondary).setEmoji('🔎'),
     new ButtonBuilder().setCustomId('carnet-borrar').setLabel('Borrar Carnet').setStyle(ButtonStyle.Danger).setEmoji('🗑️')
   );
-
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('licencia-crear').setLabel('Crear Licencia Armas').setStyle(ButtonStyle.Primary).setEmoji('🔫'),
     new ButtonBuilder().setCustomId('licencia-ver').setLabel('Ver Licencia').setStyle(ButtonStyle.Secondary).setEmoji('🔎'),
@@ -626,235 +619,251 @@ async function handlePanelDni(interaction) {
 }
 
 // ======================
-// 11. BOTONES DEL SISTEMA DNI
+// 11. BOTONES DEL SISTEMA DNI (con protección de errores)
 // ======================
 async function handleDniButton(interaction) {
-  const customId = interaction.customId;
-  let modal;
+  try {
+    const customId = interaction.customId;
+    let modal;
 
-  if (customId === 'dni-crear') {
-    modal = new ModalBuilder()
-      .setCustomId('modal-dni-crear')
-      .setTitle('🪪 Crear DNI');
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pj').setLabel('PJ (1 o 2)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nombre').setLabel('Nombre').setStyle(TextInputStyle.Short).setRequired(true)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('apellido').setLabel('Apellido').setStyle(TextInputStyle.Short).setRequired(true)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('fechaNac').setLabel('Fecha Nacimiento (DD/MM/AAAA)').setStyle(TextInputStyle.Short).setRequired(true)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nacionalidadGenero').setLabel('Nacionalidad y Género (ej: Argentina - Masculino)').setStyle(TextInputStyle.Short).setRequired(true))
-    );
-    await interaction.showModal(modal);
-  }
-  else if (customId === 'dni-ver' || customId === 'dni-borrar') {
-    modal = new ModalBuilder()
-      .setCustomId(customId === 'dni-ver' ? 'modal-dni-ver' : 'modal-dni-borrar')
-      .setTitle(customId === 'dni-ver' ? '🔎 Ver DNI' : '🗑️ Borrar DNI');
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pj').setLabel('PJ (1 o 2)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1))
-    );
-    await interaction.showModal(modal);
-  }
-  else if (customId === 'carnet-crear' || customId === 'carnet-ver' || customId === 'carnet-borrar') {
-    const action = customId.split('-')[1];
-    modal = new ModalBuilder()
-      .setCustomId(`modal-carnet-${action}`)
-      .setTitle(action === 'crear' ? '🚗 Crear Carnet de Conducir' : action === 'ver' ? '🔎 Ver Carnet' : '🗑️ Borrar Carnet');
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pj').setLabel('PJ (1 o 2)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1))
-    );
-    await interaction.showModal(modal);
-  }
-  else if (customId === 'licencia-crear' || customId === 'licencia-ver' || customId === 'licencia-borrar') {
-    const action = customId.split('-')[1];
-    modal = new ModalBuilder()
-      .setCustomId(`modal-licencia-${action}`)
-      .setTitle(action === 'crear' ? '🔫 Crear Licencia de Armas' : action === 'ver' ? '🔎 Ver Licencia' : '🗑️ Borrar Licencia');
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pj').setLabel('PJ (1 o 2)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1))
-    );
-    await interaction.showModal(modal);
+    if (customId === 'dni-crear') {
+      modal = new ModalBuilder()
+        .setCustomId('modal-dni-crear')
+        .setTitle('🪪 Crear DNI');
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pj').setLabel('PJ (1 o 2)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nombre').setLabel('Nombre').setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('apellido').setLabel('Apellido').setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('fechaNac').setLabel('Fecha Nacimiento (DD/MM/AAAA)').setStyle(TextInputStyle.Short).setRequired(true)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nacionalidadGenero').setLabel('Nacionalidad y Género (ej: Argentina - Masculino)').setStyle(TextInputStyle.Short).setRequired(true))
+      );
+    }
+    else if (customId === 'dni-ver' || customId === 'dni-borrar') {
+      modal = new ModalBuilder()
+        .setCustomId(customId === 'dni-ver' ? 'modal-dni-ver' : 'modal-dni-borrar')
+        .setTitle(customId === 'dni-ver' ? '🔎 Ver DNI' : '🗑️ Borrar DNI');
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pj').setLabel('PJ (1 o 2)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1))
+      );
+    }
+    else if (customId === 'carnet-crear' || customId === 'carnet-ver' || customId === 'carnet-borrar') {
+      const action = customId.split('-')[1];
+      modal = new ModalBuilder()
+        .setCustomId(`modal-carnet-${action}`)
+        .setTitle(action === 'crear' ? '🚗 Crear Carnet de Conducir' : action === 'ver' ? '🔎 Ver Carnet' : '🗑️ Borrar Carnet');
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pj').setLabel('PJ (1 o 2)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1))
+      );
+    }
+    else if (customId === 'licencia-crear' || customId === 'licencia-ver' || customId === 'licencia-borrar') {
+      const action = customId.split('-')[1];
+      modal = new ModalBuilder()
+        .setCustomId(`modal-licencia-${action}`)
+        .setTitle(action === 'crear' ? '🔫 Crear Licencia de Armas' : action === 'ver' ? '🔎 Ver Licencia' : '🗑️ Borrar Licencia');
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pj').setLabel('PJ (1 o 2)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1))
+      );
+    }
+
+    if (modal) await interaction.showModal(modal);
+  } catch (error) {
+    console.error('❌ Error en handleDniButton:', error);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: '❌ Error al abrir el formulario. Contacta a un administrador.', ephemeral: true });
+    }
   }
 }
 
 // ======================
-// 12. MODALES DEL SISTEMA DNI
+// 12. MODALES DEL SISTEMA DNI (con protección de errores)
 // ======================
 async function handleModalSubmit(interaction) {
-  const customId = interaction.customId;
-  const guildId = interaction.guild.id;
-  const userId = interaction.user.id;
-  const userData = getUserData(guildId, userId);
+  try {
+    const customId = interaction.customId;
+    const guildId = interaction.guild.id;
+    const userId = interaction.user.id;
+    const userData = getUserData(guildId, userId);
 
-  // ==================== CREAR DNI ====================
-  if (customId === 'modal-dni-crear') {
-    const pj = interaction.fields.getTextInputValue('pj');
-    const nombre = interaction.fields.getTextInputValue('nombre');
-    const apellido = interaction.fields.getTextInputValue('apellido');
-    const fechaNac = interaction.fields.getTextInputValue('fechaNac');
-    const nacionalidadGenero = interaction.fields.getTextInputValue('nacionalidadGenero');
+    // ==================== CREAR DNI ====================
+    if (customId === 'modal-dni-crear') {
+      const pj = interaction.fields.getTextInputValue('pj');
+      const nombre = interaction.fields.getTextInputValue('nombre');
+      const apellido = interaction.fields.getTextInputValue('apellido');
+      const fechaNac = interaction.fields.getTextInputValue('fechaNac');
+      const nacionalidadGenero = interaction.fields.getTextInputValue('nacionalidadGenero');
 
-    if (pj !== '1' && pj !== '2') {
-      return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', ephemeral: true });
-    }
-    if (userData.pjs[pj].dni) {
-      return interaction.reply({ content: `❌ Ya tienes un DNI creado para el PJ${pj}.`, ephemeral: true });
-    }
-
-    const dniNumero = Math.floor(10000000 + Math.random() * 90000000).toString();
-    const fechaCreacion = new Date().toLocaleDateString('es-ES');
-
-    userData.pjs[pj].dni = {
-      numero: dniNumero,
-      nombre,
-      apellido,
-      fechaNac,
-      nacionalidadGenero,
-      fechaCreacion
-    };
-
-    guardarIdentidades();
-
-    const embed = new EmbedBuilder()
-      .setTitle(`✅ DNI Creado - PJ${pj}`)
-      .setColor(0x00FFAA)
-      .addFields(
-        { name: 'DNI', value: dniNumero, inline: true },
-        { name: 'Nombre', value: `${nombre} ${apellido}`, inline: true },
-        { name: 'Fecha Nacimiento', value: fechaNac, inline: true },
-        { name: 'Nacionalidad / Género', value: nacionalidadGenero, inline: false },
-        { name: 'Creado', value: fechaCreacion, inline: true }
-      );
-
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-  }
-
-  // ==================== VER / BORRAR DNI ====================
-  else if (customId === 'modal-dni-ver' || customId === 'modal-dni-borrar') {
-    const pj = interaction.fields.getTextInputValue('pj');
-    if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', ephemeral: true });
-
-    const dni = userData.pjs[pj].dni;
-    if (!dni) return interaction.reply({ content: `❌ No tienes DNI en el PJ${pj}.`, ephemeral: true });
-
-    if (customId === 'modal-dni-ver') {
-      const embed = new EmbedBuilder()
-        .setTitle(`🔎 DNI OFICIAL - PJ${pj}`)
-        .setColor(0x00AAFF)
-        .addFields(
-          { name: 'DNI', value: dni.numero, inline: true },
-          { name: 'Nombre', value: `${dni.nombre} ${dni.apellido}`, inline: true },
-          { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
-          { name: 'Nacionalidad / Género', value: dni.nacionalidadGenero, inline: false },
-          { name: 'Creado', value: dni.fechaCreacion, inline: true }
-        )
-        .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
-
-      const channel = interaction.guild.channels.cache.get(DNI_CHANNEL_ID);
-      if (channel) {
-        await channel.send({ embeds: [embed] });
-        await interaction.reply({ content: `✅ DNI del PJ${pj} enviado al canal de DNI.`, ephemeral: true });
-      } else {
-        await interaction.reply({ content: '❌ No se encontró el canal de DNI.', ephemeral: true });
+      if (pj !== '1' && pj !== '2') {
+        return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', ephemeral: true });
       }
-    } else {
-      // Borrar
-      userData.pjs[pj].dni = null;
-      userData.pjs[pj].carnetConducir = null;
-      userData.pjs[pj].licenciaArmas = null;
+      if (userData.pjs[pj].dni) {
+        return interaction.reply({ content: `❌ Ya tienes un DNI creado para el PJ${pj}.`, ephemeral: true });
+      }
+
+      const dniNumero = Math.floor(10000000 + Math.random() * 90000000).toString();
+      const fechaCreacion = new Date().toLocaleDateString('es-ES');
+
+      userData.pjs[pj].dni = {
+        numero: dniNumero,
+        nombre,
+        apellido,
+        fechaNac,
+        nacionalidadGenero,
+        fechaCreacion
+      };
+
       guardarIdentidades();
-      await interaction.reply({ content: `🗑️ DNI del PJ${pj} eliminado correctamente.`, ephemeral: true });
-    }
-  }
-
-  // ==================== CARNET DE CONDUCIR ====================
-  else if (customId.startsWith('modal-carnet-')) {
-    const action = customId.split('-')[2];
-    const pj = interaction.fields.getTextInputValue('pj');
-    if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', ephemeral: true });
-
-    const dni = userData.pjs[pj].dni;
-    if (!dni) return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, ephemeral: true });
-
-    if (action === 'crear') {
-      if (userData.pjs[pj].carnetConducir) return interaction.reply({ content: `❌ Ya tienes carnet de conducir en el PJ${pj}.`, ephemeral: true });
-      const numero = `CC-${Math.floor(1000 + Math.random() * 9000)}`;
-      const fecha = new Date().toLocaleDateString('es-ES');
-      userData.pjs[pj].carnetConducir = { numero, fechaEmision: fecha };
-      guardarIdentidades();
-      await interaction.reply({ content: `✅ Carnet de Conducir creado para PJ${pj}\n**Número:** ${numero}`, ephemeral: true });
-    }
-    else if (action === 'ver') {
-      const carnet = userData.pjs[pj].carnetConducir;
-      if (!carnet) return interaction.reply({ content: `❌ No tienes carnet de conducir en el PJ${pj}.`, ephemeral: true });
 
       const embed = new EmbedBuilder()
-        .setTitle(`🚗 CARNET DE CONDUCIR - PJ${pj}`)
-        .setColor(0x00FF88)
+        .setTitle(`✅ DNI Creado - PJ${pj}`)
+        .setColor(0x00FFAA)
         .addFields(
-          { name: 'Número', value: carnet.numero, inline: true },
-          { name: 'Emitido', value: carnet.fechaEmision, inline: true }
-        )
-        .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
+          { name: 'DNI', value: dniNumero, inline: true },
+          { name: 'Nombre', value: `${nombre} ${apellido}`, inline: true },
+          { name: 'Fecha Nacimiento', value: fechaNac, inline: true },
+          { name: 'Nacionalidad / Género', value: nacionalidadGenero, inline: false },
+          { name: 'Creado', value: fechaCreacion, inline: true }
+        );
 
-      const channel = interaction.guild.channels.cache.get(CARNET_CHANNEL_ID);
-      if (channel) {
-        await channel.send({ embeds: [embed] });
-        await interaction.reply({ content: `✅ Carnet del PJ${pj} enviado al canal de Carnets.`, ephemeral: true });
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+      return;
+    }
+
+    // ==================== VER / BORRAR DNI ====================
+    else if (customId === 'modal-dni-ver' || customId === 'modal-dni-borrar') {
+      const pj = interaction.fields.getTextInputValue('pj');
+      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', ephemeral: true });
+
+      const dni = userData.pjs[pj].dni;
+      if (!dni) return interaction.reply({ content: `❌ No tienes DNI en el PJ${pj}.`, ephemeral: true });
+
+      if (customId === 'modal-dni-ver') {
+        const embed = new EmbedBuilder()
+          .setTitle(`🔎 DNI OFICIAL - PJ${pj}`)
+          .setColor(0x00AAFF)
+          .addFields(
+            { name: 'DNI', value: dni.numero, inline: true },
+            { name: 'Nombre', value: `${dni.nombre} ${dni.apellido}`, inline: true },
+            { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
+            { name: 'Nacionalidad / Género', value: dni.nacionalidadGenero, inline: false },
+            { name: 'Creado', value: dni.fechaCreacion, inline: true }
+          )
+          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
+
+        const channel = interaction.guild.channels.cache.get(DNI_CHANNEL_ID);
+        if (channel) {
+          await channel.send({ embeds: [embed] });
+          await interaction.reply({ content: `✅ DNI del PJ${pj} enviado al canal de DNI.`, ephemeral: true });
+        } else {
+          await interaction.reply({ content: '❌ No se encontró el canal de DNI.', ephemeral: true });
+        }
       } else {
-        await interaction.reply({ content: '❌ No se encontró el canal de Carnets.', ephemeral: true });
+        userData.pjs[pj].dni = null;
+        userData.pjs[pj].carnetConducir = null;
+        userData.pjs[pj].licenciaArmas = null;
+        guardarIdentidades();
+        await interaction.reply({ content: `🗑️ DNI del PJ${pj} eliminado correctamente.`, ephemeral: true });
       }
+      return;
     }
-    else if (action === 'borrar') {
-      if (!userData.pjs[pj].carnetConducir) return interaction.reply({ content: `❌ No tienes carnet para borrar en el PJ${pj}.`, ephemeral: true });
-      userData.pjs[pj].carnetConducir = null;
-      guardarIdentidades();
-      await interaction.reply({ content: `🗑️ Carnet de conducir del PJ${pj} eliminado.`, ephemeral: true });
-    }
-  }
 
-  // ==================== LICENCIA DE ARMAS ====================
-  else if (customId.startsWith('modal-licencia-')) {
-    const action = customId.split('-')[2];
-    const pj = interaction.fields.getTextInputValue('pj');
-    if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', ephemeral: true });
+    // ==================== CARNET DE CONDUCIR ====================
+    else if (customId.startsWith('modal-carnet-')) {
+      const action = customId.split('-')[2];
+      const pj = interaction.fields.getTextInputValue('pj');
+      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', ephemeral: true });
 
-    const dni = userData.pjs[pj].dni;
-    if (!dni) return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, ephemeral: true });
+      const dni = userData.pjs[pj].dni;
+      if (!dni) return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, ephemeral: true });
 
-    if (action === 'crear') {
-      if (userData.pjs[pj].licenciaArmas) return interaction.reply({ content: `❌ Ya tienes licencia de armas en el PJ${pj}.`, ephemeral: true });
-      const numero = `LA-${Math.floor(1000 + Math.random() * 9000)}`;
-      const fecha = new Date().toLocaleDateString('es-ES');
-      userData.pjs[pj].licenciaArmas = { numero, fechaEmision: fecha };
-      guardarIdentidades();
-      await interaction.reply({ content: `✅ Licencia de Armas creada para PJ${pj}\n**Número:** ${numero}`, ephemeral: true });
-    }
-    else if (action === 'ver') {
-      const licencia = userData.pjs[pj].licenciaArmas;
-      if (!licencia) return interaction.reply({ content: `❌ No tienes licencia de armas en el PJ${pj}.`, ephemeral: true });
-
-      const embed = new EmbedBuilder()
-        .setTitle(`🔫 LICENCIA DE ARMAS - PJ${pj}`)
-        .setColor(0xFF8800)
-        .addFields(
-          { name: 'Número', value: licencia.numero, inline: true },
-          { name: 'Emitida', value: licencia.fechaEmision, inline: true }
-        )
-        .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
-
-      const channel = interaction.guild.channels.cache.get(LICENCIA_CHANNEL_ID);
-      if (channel) {
-        await channel.send({ embeds: [embed] });
-        await interaction.reply({ content: `✅ Licencia del PJ${pj} enviada al canal de Licencias.`, ephemeral: true });
-      } else {
-        await interaction.reply({ content: '❌ No se encontró el canal de Licencias.', ephemeral: true });
+      if (action === 'crear') {
+        if (userData.pjs[pj].carnetConducir) return interaction.reply({ content: `❌ Ya tienes carnet de conducir en el PJ${pj}.`, ephemeral: true });
+        const numero = `CC-${Math.floor(1000 + Math.random() * 9000)}`;
+        const fecha = new Date().toLocaleDateString('es-ES');
+        userData.pjs[pj].carnetConducir = { numero, fechaEmision: fecha };
+        guardarIdentidades();
+        await interaction.reply({ content: `✅ Carnet de Conducir creado para PJ${pj}\n**Número:** ${numero}`, ephemeral: true });
       }
+      else if (action === 'ver') {
+        const carnet = userData.pjs[pj].carnetConducir;
+        if (!carnet) return interaction.reply({ content: `❌ No tienes carnet de conducir en el PJ${pj}.`, ephemeral: true });
+
+        const embed = new EmbedBuilder()
+          .setTitle(`🚗 CARNET DE CONDUCIR - PJ${pj}`)
+          .setColor(0x00FF88)
+          .addFields(
+            { name: 'Número', value: carnet.numero, inline: true },
+            { name: 'Emitido', value: carnet.fechaEmision, inline: true }
+          )
+          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
+
+        const channel = interaction.guild.channels.cache.get(CARNET_CHANNEL_ID);
+        if (channel) {
+          await channel.send({ embeds: [embed] });
+          await interaction.reply({ content: `✅ Carnet del PJ${pj} enviado al canal de Carnets.`, ephemeral: true });
+        } else {
+          await interaction.reply({ content: '❌ No se encontró el canal de Carnets.', ephemeral: true });
+        }
+      }
+      else if (action === 'borrar') {
+        if (!userData.pjs[pj].carnetConducir) return interaction.reply({ content: `❌ No tienes carnet para borrar en el PJ${pj}.`, ephemeral: true });
+        userData.pjs[pj].carnetConducir = null;
+        guardarIdentidades();
+        await interaction.reply({ content: `🗑️ Carnet de conducir del PJ${pj} eliminado.`, ephemeral: true });
+      }
+      return;
     }
-    else if (action === 'borrar') {
-      if (!userData.pjs[pj].licenciaArmas) return interaction.reply({ content: `❌ No tienes licencia para borrar en el PJ${pj}.`, ephemeral: true });
-      userData.pjs[pj].licenciaArmas = null;
-      guardarIdentidades();
-      await interaction.reply({ content: `🗑️ Licencia de armas del PJ${pj} eliminada.`, ephemeral: true });
+
+    // ==================== LICENCIA DE ARMAS ====================
+    else if (customId.startsWith('modal-licencia-')) {
+      const action = customId.split('-')[2];
+      const pj = interaction.fields.getTextInputValue('pj');
+      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', ephemeral: true });
+
+      const dni = userData.pjs[pj].dni;
+      if (!dni) return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, ephemeral: true });
+
+      if (action === 'crear') {
+        if (userData.pjs[pj].licenciaArmas) return interaction.reply({ content: `❌ Ya tienes licencia de armas en el PJ${pj}.`, ephemeral: true });
+        const numero = `LA-${Math.floor(1000 + Math.random() * 9000)}`;
+        const fecha = new Date().toLocaleDateString('es-ES');
+        userData.pjs[pj].licenciaArmas = { numero, fechaEmision: fecha };
+        guardarIdentidades();
+        await interaction.reply({ content: `✅ Licencia de Armas creada para PJ${pj}\n**Número:** ${numero}`, ephemeral: true });
+      }
+      else if (action === 'ver') {
+        const licencia = userData.pjs[pj].licenciaArmas;
+        if (!licencia) return interaction.reply({ content: `❌ No tienes licencia de armas en el PJ${pj}.`, ephemeral: true });
+
+        const embed = new EmbedBuilder()
+          .setTitle(`🔫 LICENCIA DE ARMAS - PJ${pj}`)
+          .setColor(0xFF8800)
+          .addFields(
+            { name: 'Número', value: licencia.numero, inline: true },
+            { name: 'Emitida', value: licencia.fechaEmision, inline: true }
+          )
+          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
+
+        const channel = interaction.guild.channels.cache.get(LICENCIA_CHANNEL_ID);
+        if (channel) {
+          await channel.send({ embeds: [embed] });
+          await interaction.reply({ content: `✅ Licencia del PJ${pj} enviada al canal de Licencias.`, ephemeral: true });
+        } else {
+          await interaction.reply({ content: '❌ No se encontró el canal de Licencias.', ephemeral: true });
+        }
+      }
+      else if (action === 'borrar') {
+        if (!userData.pjs[pj].licenciaArmas) return interaction.reply({ content: `❌ No tienes licencia para borrar en el PJ${pj}.`, ephemeral: true });
+        userData.pjs[pj].licenciaArmas = null;
+        guardarIdentidades();
+        await interaction.reply({ content: `🗑️ Licencia de armas del PJ${pj} eliminada.`, ephemeral: true });
+      }
+      return;
+    }
+
+  } catch (error) {
+    console.error('❌ Error en handleModalSubmit:', error);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: '❌ Ocurrió un error al procesar el formulario. Revisa los logs del bot.', ephemeral: true });
     }
   }
 }
