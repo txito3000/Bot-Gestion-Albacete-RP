@@ -872,4 +872,4 @@ async function handleModalSubmit(interaction) {
 // 13. LOGIN
 // ======================
 client.login(process.env.TOKEN)
-  .catch(err => console.error('❌ Error al iniciar sesión:', err));
+  .catch(err => console.error('❌ Error al iniciar sesión:', err))
