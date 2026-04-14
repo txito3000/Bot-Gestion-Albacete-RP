@@ -1,5 +1,5 @@
 // ======================
-// BOT DE GESTIÓN ALBACETE RP - Versión Final 100% Corregida
+// BOT DE GESTIÓN ALBACETE RP - Versión Final COMPLETA con Comandos Admin
 // ======================
 
 require('dotenv').config();
@@ -100,7 +100,7 @@ function createProgressBar(votosQueCuentan, maximo = 5) {
 }
 
 // ======================
-// SISTEMA DE IDENTIDADES (DNI, Carnet, Licencia)
+// SISTEMA DE IDENTIDADES
 // ======================
 const IDENTIDADES_FILE = path.join(__dirname, 'identidades.json');
 let identidades = {};
@@ -183,7 +183,22 @@ client.once(Events.ClientReady, async () => {
       .setDescription('Eliminar una sanción por ID')
       .addIntegerOption(opt => opt.setName('id').setDescription('ID de la sanción').setRequired(true)),
     
-    new SlashCommandBuilder().setName('panel-dni').setDescription('Crea el panel oficial del sistema de DNI')
+    new SlashCommandBuilder().setName('panel-dni').setDescription('Crea el panel oficial del sistema de DNI'),
+
+    // ==================== COMANDOS ADMIN ====================
+    new SlashCommandBuilder()
+      .setName('borrar-dni-admin')
+      .setDescription('🔧 [ADMIN] Borra el DNI y todos los documentos de un usuario')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario al que borrar DNI').setRequired(true))
+      .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
+        .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
+
+    new SlashCommandBuilder()
+      .setName('ver-dni-admin')
+      .setDescription('🔧 [ADMIN] Ver DNI de cualquier usuario')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a consultar').setRequired(true))
+      .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
+        .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' }))
   ];
 
   for (const guild of client.guilds.cache.values()) {
@@ -197,19 +212,15 @@ client.once(Events.ClientReady, async () => {
 });
 
 // ======================
-// INTERACCIONES (CORREGIDO)
+// INTERACCIONES
 // ======================
 client.on(Events.InteractionCreate, async interaction => {
   try {
     if (interaction.isChatInputCommand()) {
       switch (interaction.commandName) {
         case 'ping': 
-          await interaction.reply({ 
-            content: `🏓 Pong! Latencia: **${client.ws.ping}ms**`, 
-            flags: MessageFlags.Ephemeral 
-          });
+          await interaction.reply({ content: `🏓 Pong! Latencia: **${client.ws.ping}ms**`, flags: MessageFlags.Ephemeral }); 
           break;
-
         case 'votacion': await handleVotacion(interaction); break;
         case 'abrirserver': await handleAbrirServer(interaction); break;
         case 'cerrarserver': await handleCerrarServer(interaction); break;
@@ -219,6 +230,8 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'sanciones_usuario': await handleVerSancionesUsuario(interaction); break;
         case 'eliminarsancion': await handleEliminarSancion(interaction); break;
         case 'panel-dni': await handlePanelDni(interaction); break;
+        case 'borrar-dni-admin': await handleBorrarDniAdmin(interaction); break;
+        case 'ver-dni-admin': await handleVerDniAdmin(interaction); break;
       }
       return;
     }
@@ -241,17 +254,70 @@ client.on(Events.InteractionCreate, async interaction => {
     console.error('❌ Error global en InteractionCreate:', error);
     if (!interaction.replied && !interaction.deferred) {
       try {
-        await interaction.reply({ 
-          content: '❌ Ocurrió un error inesperado.', 
-          flags: MessageFlags.Ephemeral 
-        });
+        await interaction.reply({ content: '❌ Ocurrió un error inesperado.', flags: MessageFlags.Ephemeral });
       } catch {}
     }
   }
 });
 
 // ======================
-// FUNCIONES DE SANCIONES (intactas)
+// COMANDOS ADMIN
+// ======================
+async function handleBorrarDniAdmin(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo los administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
+  }
+
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+
+  const userData = getUserData(interaction.guild.id, target.id);
+
+  if (!userData.pjs[pj].dni) {
+    return interaction.reply({ content: `❌ **${target}** no tiene DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+  }
+
+  userData.pjs[pj].dni = null;
+  userData.pjs[pj].carnetConducir = null;
+  userData.pjs[pj].licenciaArmas = null;
+  guardarIdentidades();
+
+  await interaction.reply(`✅ **DNI y todos los documentos del PJ${pj} de ${target} han sido eliminados.**`);
+}
+
+async function handleVerDniAdmin(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo los administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
+  }
+
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+
+  const userData = getUserData(interaction.guild.id, target.id);
+  const dni = userData.pjs[pj].dni;
+
+  if (!dni) {
+    return interaction.reply({ content: `❌ **${target}** no tiene DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🔎 DNI de ${target.user.tag} - PJ${pj}`)
+    .setColor(0x00AAFF)
+    .addFields(
+      { name: 'DNI', value: dni.numero, inline: true },
+      { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
+      { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
+      { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
+      { name: 'Género', value: dni.genero, inline: true },
+      { name: 'Creado', value: dni.fechaCreacion, inline: true }
+    )
+    .setThumbnail(target.user.displayAvatarURL());
+
+  await interaction.reply({ embeds: [embed] });
+}
+
+// ======================
+// SANCIONES
 // ======================
 async function handleSancionar(interaction) {
   if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
@@ -403,7 +469,7 @@ async function handleEliminarSancion(interaction) {
 }
 
 // ======================
-// FUNCIONES DE VOTACIÓN (intactas)
+// VOTACIONES
 // ======================
 async function handleVotacion(interaction) {
   await interaction.deferReply();
@@ -629,10 +695,7 @@ async function cerrarVotacionPorTiempo(messageId) {
 // ======================
 async function handlePanelDni(interaction) {
   if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ 
-      content: '❌ Solo los administradores pueden crear el panel de DNI.', 
-      flags: MessageFlags.Ephemeral 
-    });
+    return interaction.reply({ content: '❌ Solo los administradores pueden crear el panel de DNI.', flags: MessageFlags.Ephemeral });
   }
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -669,7 +732,7 @@ async function handlePanelDni(interaction) {
 }
 
 // ======================
-// BOTONES DEL SISTEMA DNI - CORREGIDO (5 campos máximo)
+// BOTONES DEL SISTEMA DNI
 // ======================
 async function handleDniButton(interaction) {
   try {
@@ -724,7 +787,7 @@ async function handleDniButton(interaction) {
 }
 
 // ======================
-// MODALES DEL SISTEMA DNI (COMPLETO)
+// MODALES DEL SISTEMA DNI
 // ======================
 async function handleModalSubmit(interaction) {
   try {
@@ -943,10 +1006,7 @@ async function handleModalSubmit(interaction) {
   } catch (error) {
     console.error('❌ Error en handleModalSubmit:', error);
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ 
-        content: '❌ Ocurrió un error al procesar el formulario.', 
-        flags: MessageFlags.Ephemeral 
-      });
+      await interaction.reply({ content: '❌ Ocurrió un error al procesar el formulario.', flags: MessageFlags.Ephemeral });
     }
   }
 }
