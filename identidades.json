@@ -1,0 +1,32 @@
+{
+    "1397737510167117864": {
+        "716345978415743016": {
+            "pjs": {
+                "1": {
+                    "dni": {
+                        "numero": "31247797",
+                        "nombre": "Paco",
+                        "apellido": "Salas",
+                        "fechaNac": "23/08/1998",
+                        "nacionalidad": "España",
+                        "genero": "Masculino",
+                        "fechaCreacion": "14/4/2026"
+                    },
+                    "carnetConducir": {
+                        "numero": "CC-5481",
+                        "fechaEmision": "14/4/2026"
+                    },
+                    "licenciaArmas": {
+                        "numero": "LA-6720",
+                        "fechaEmision": "14/4/2026"
+                    }
+                },
+                "2": {
+                    "dni": null,
+                    "carnetConducir": null,
+                    "licenciaArmas": null
+                }
+            }
+        }
+    }
+}
