@@ -1,5 +1,5 @@
 // ======================
-// BOT DE GESTIÓN ALBACETE RP - VERSIÓN COMPLETA OPTIMIZADA + ECONOMÍA + IDEAS EXTRA
+// BOT DE GESTIÓN ALBACETE RP - CÓDIGO COMPLETO Y EXTENDIDO
 // ======================
 
 require('dotenv').config();
@@ -49,12 +49,20 @@ const client = new Client({
 });
 
 // ======================
-// CONFIGURACIÓN GLOBAL
+// CONFIGURACIÓN DE CANALES
 // ======================
 const DNI_CHANNEL_ID = '1466563810784444478';
 const CARNET_CHANNEL_ID = '1457570708497371332';
 const LICENCIA_CHANNEL_ID = '1493631768169939136';
-const STAFF_ROLE_ID = '1401062801191211049'; // ← ROL STAFF (solo ellos pueden usar comandos admin)
+
+// ======================
+// ROLES AUTORIZADOS PARA POLICÍA (multa y arrestar)
+// ======================
+const POLICE_ROLES = [
+  '1457537988132343858',
+  '1457538324578439396',
+  '1467525875007230055'
+];
 
 // ======================
 // SISTEMA DE SANCIONES
@@ -112,30 +120,37 @@ function getVoterList(pollData, type) {
 }
 
 // ======================
-// SISTEMA DE IDENTIDADES + ECONOMÍA
+// SISTEMA DE ECONOMÍA
+// ======================
+const SALARY_BASE = 1500;
+const ROLE_BONUSES = {
+  // 🔥 REEMPLAZA ESTOS IDs CON LOS ROLES REALES DE TU SERVIDOR
+  '1467525875007230055': 1000,
+  '1457538526173462670': 1000,
+  '1457538324578439396': 1000,
+  '1457537988132343858': 1000,
+  '1457537819814789242': 800,
+  '1457537536019665017': 1000,
+  '1457537243714420797': 1000,
+  '1457536868630532328': 1000,
+  '1464767715083550966': -250,
+};
+
+// Estado del servidor
+let serverAbierto = false;
+let ultimaApertura = null;
+
+// ======================
+// SISTEMA DE IDENTIDADES
 // ======================
 const IDENTIDADES_FILE = path.join(__dirname, 'identidades.json');
 let identidades = {};
-
-const SALARY_BASE = 1500;
-
-// Lista de sueldos por rol (actualizada con los IDs que diste)
-const ROLE_BONUSES = {
-  '1468002942111059988': 500,
-  '1464767715083550966': -250,
-  '1467525875007230055': 1200,
-  '1457538526173462670': 1200,
-  '1457538324578439396': 1200,
-  '1457537988132343858': 1200,
-  '1457537819814789242': 1200,
-  '1457537536019665017': 1200,
-};
 
 function cargarIdentidades() {
   if (fs.existsSync(IDENTIDADES_FILE)) {
     try {
       identidades = JSON.parse(fs.readFileSync(IDENTIDADES_FILE, 'utf-8'));
-      console.log('✅ Identidades + Economía cargadas correctamente.');
+      console.log('✅ Identidades (DNI + Economía) cargadas correctamente.');
     } catch (error) {
       console.error('❌ Error al cargar identidades:', error.message);
       identidades = {};
@@ -164,29 +179,14 @@ function getUserData(guildId, userId) {
         "2": { dni: null, carnetConducir: null, licenciaArmas: null }
       },
       dinero: 6000,
-      lastSalary: null,
-      lastTrabajo: null
+      lastSalary: null
     };
   } else {
-    // Inicializar campos nuevos en usuarios antiguos
+    // Inicializar economía en usuarios antiguos
     if (typeof identidades[guildId][userId].dinero !== 'number') identidades[guildId][userId].dinero = 6000;
     if (!identidades[guildId][userId].lastSalary) identidades[guildId][userId].lastSalary = null;
-    if (!identidades[guildId][userId].lastTrabajo) identidades[guildId][userId].lastTrabajo = null;
   }
   return identidades[guildId][userId];
-}
-
-// ======================
-// ESTADO DEL SERVIDOR
-// ======================
-let serverAbierto = false;
-let ultimaApertura = null;
-
-// ======================
-// PERMISO STAFF (OPTIMIZACIÓN)
-// ======================
-function hasStaffRole(member) {
-  return member.roles.cache.has(STAFF_ROLE_ID);
 }
 
 // ======================
@@ -232,38 +232,39 @@ client.once(Events.ClientReady, async () => {
     
     new SlashCommandBuilder().setName('panel-dni').setDescription('Crea el panel oficial del sistema de DNI'),
 
-    // ==================== COMANDOS ADMIN (solo STAFF_ROLE) ====================
+    // ==================== COMANDOS ADMIN ====================
     new SlashCommandBuilder()
       .setName('borrar-dni-admin')
-      .setDescription('🔧 [STAFF] Borra el DNI y todos los documentos de un usuario')
+      .setDescription('🔧 [ADMIN] Borra el DNI y todos los documentos de un usuario')
       .addUserOption(opt => opt.setName('usuario').setDescription('Usuario al que borrar DNI').setRequired(true))
       .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
         .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
 
     new SlashCommandBuilder()
       .setName('ver-dni-admin')
-      .setDescription('🔧 [STAFF] Ver DNI de cualquier usuario')
+      .setDescription('🔧 [ADMIN] Ver DNI de cualquier usuario')
       .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a consultar').setRequired(true))
       .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
         .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
 
+    // ==================== NUEVOS COMANDOS ====================
     new SlashCommandBuilder()
       .setName('buscar-dni')
-      .setDescription('🔍 [STAFF] Busca el DNI de cualquier usuario')
+      .setDescription('🔍 Busca el DNI de cualquier usuario (Policía/Staff)')
       .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a buscar').setRequired(true))
       .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
         .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
 
     new SlashCommandBuilder()
       .setName('multa')
-      .setDescription('💰 [STAFF] Registra una multa + resta dinero automáticamente')
+      .setDescription('💰 Registra una multa + sanción automática')
       .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
       .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad de la multa').setRequired(true))
       .addStringOption(opt => opt.setName('razon').setDescription('Razón de la multa').setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('anuncio-rp')
-      .setDescription('📢 [STAFF] Crea un anuncio RP bonito')
+      .setDescription('📢 Crea un anuncio RP bonito')
       .addStringOption(opt => opt.setName('titulo').setDescription('Título del anuncio').setRequired(true))
       .addStringOption(opt => opt.setName('descripcion').setDescription('Texto del anuncio').setRequired(true))
       .addStringOption(opt => opt.setName('color').setDescription('Color del embed')
@@ -275,20 +276,31 @@ client.once(Events.ClientReady, async () => {
         )),
 
     new SlashCommandBuilder()
-      .setName('addmoney')
-      .setDescription('🔧 [STAFF] Añadir o quitar dinero a un usuario')
-      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
-      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (positiva = añadir, negativa = quitar)').setRequired(true)),
-
-    new SlashCommandBuilder()
       .setName('estado-server')
       .setDescription('📡 Muestra si el servidor está abierto o cerrado'),
 
-    // ====================== ECONOMÍA (públicos) ======================
+    new SlashCommandBuilder()
+      .setName('arrestar')
+      .setDescription('🚔 Realizar un arresto (solo Policía)'),
+
+    new SlashCommandBuilder()
+      .setName('ver-dni')
+      .setDescription('🔍 Ver DNI de cualquier usuario (público)')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
+      .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
+        .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
+
+    // ==================== ECONOMÍA ====================
     new SlashCommandBuilder()
       .setName('balance')
       .setDescription('💰 Ver tu dinero o el de otro usuario')
       .addUserOption(opt => opt.setName('usuario').setDescription('Usuario (opcional)')),
+
+    new SlashCommandBuilder()
+      .setName('addmoney')
+      .setDescription('🔧 [ADMIN] Añadir o quitar dinero')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
+      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (positiva = añadir, negativa = quitar)').setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('sueldo')
@@ -314,12 +326,7 @@ client.once(Events.ClientReady, async () => {
 
     new SlashCommandBuilder()
       .setName('leaderboard')
-      .setDescription('🏆 Top 10 más ricos del servidor'),
-
-    // ====================== IDEA EXTRA: /trabajar ======================
-    new SlashCommandBuilder()
-      .setName('trabajar')
-      .setDescription('💼 Trabajar y ganar dinero (cada 8 horas)'),
+      .setDescription('🏆 Top 10 más ricos del servidor')
   ];
 
   for (const guild of client.guilds.cache.values()) {
@@ -356,14 +363,15 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'buscar-dni': await handleBuscarDni(interaction); break;
         case 'multa': await handleMulta(interaction); break;
         case 'anuncio-rp': await handleAnuncioRp(interaction); break;
-        case 'addmoney': await handleAddMoney(interaction); break;
         case 'estado-server': await handleEstadoServer(interaction); break;
+        case 'arrestar': await handleArrestar(interaction); break;
+        case 'ver-dni': await handleVerDniPublico(interaction); break;
         case 'balance': await handleBalance(interaction); break;
+        case 'addmoney': await handleAddMoney(interaction); break;
         case 'sueldo': await handleSueldo(interaction); break;
         case 'transferir': await handleTransferir(interaction); break;
         case 'apostar': await handleApostar(interaction); break;
         case 'leaderboard': await handleLeaderboard(interaction); break;
-        case 'trabajar': await handleTrabajar(interaction); break;
       }
       return;
     }
@@ -393,24 +401,16 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 
 // ======================
-// COMANDOS ADMIN / STAFF (PROTEGIDOS)
-// ======================
-async function checkStaff(interaction) {
-  if (!hasStaffRole(interaction.member)) {
-    await interaction.reply({ content: '❌ Solo el rol Staff puede usar este comando.', flags: MessageFlags.Ephemeral });
-    return false;
-  }
-  return true;
-}
-
-// ======================
-// COMANDOS DNI ADMIN
+// COMANDOS ADMIN
 // ======================
 async function handleBorrarDniAdmin(interaction) {
-  if (!(await checkStaff(interaction))) return;
-  // ... (código original sin cambios)
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo los administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
+  }
+
   const target = interaction.options.getMember('usuario');
   const pj = interaction.options.getString('pj');
+
   const userData = getUserData(interaction.guild.id, target.id);
 
   if (!userData.pjs[pj].dni) {
@@ -426,10 +426,13 @@ async function handleBorrarDniAdmin(interaction) {
 }
 
 async function handleVerDniAdmin(interaction) {
-  if (!(await checkStaff(interaction))) return;
-  // ... (código original)
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo los administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
+  }
+
   const target = interaction.options.getMember('usuario');
   const pj = interaction.options.getString('pj');
+
   const userData = getUserData(interaction.guild.id, target.id);
   const dni = userData.pjs[pj].dni;
 
@@ -453,40 +456,14 @@ async function handleVerDniAdmin(interaction) {
   await interaction.reply({ embeds: [embed] });
 }
 
-async function handleBuscarDni(interaction) {
-  if (!(await checkStaff(interaction))) return;
-  const target = interaction.options.getMember('usuario');
-  const pj = interaction.options.getString('pj');
-  const userData = getUserData(interaction.guild.id, target.id);
-  const dni = userData.pjs[pj].dni;
-
-  if (!dni) {
-    return interaction.reply({ content: `❌ **${target}** no tiene DNI registrado en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-  }
-
-  const embed = new EmbedBuilder()
-    .setTitle(`🔍 DNI ENCONTRADO - PJ${pj}`)
-    .setColor(0x00AAFF)
-    .setThumbnail(target.user.displayAvatarURL())
-    .addFields(
-      { name: '👤 Usuario', value: `${target} (\`${target.id}\`)`, inline: false },
-      { name: '🪪 DNI', value: dni.numero, inline: true },
-      { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
-      { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
-      { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
-      { name: 'Género', value: dni.genero, inline: true },
-      { name: 'Creado', value: dni.fechaCreacion, inline: true }
-    );
-
-  await interaction.reply({ embeds: [embed] });
-}
-
 // ======================
-// SANCIONES (STAFF)
+// SANCIONES
 // ======================
 async function handleSancionar(interaction) {
-  if (!(await checkStaff(interaction))) return;
-  // ... (código original sin cambios)
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return interaction.reply({ content: '❌ No tienes permisos suficientes.', flags: MessageFlags.Ephemeral });
+  }
+
   const miembro = interaction.options.getMember('usuario');
   const gravedad = interaction.options.getString('gravedad');
   let razon = interaction.options.getString('razon') || 'Sin razón especificada';
@@ -533,14 +510,29 @@ async function handleSancionar(interaction) {
 
   await interaction.reply({ embeds: [embedPublico] });
 
+  const embedDM = new EmbedBuilder()
+    .setTitle('📋 Has recibido una sanción')
+    .setDescription('Esta sanción ha quedado registrada en el servidor.')
+    .setColor(0xFF0000)
+    .setTimestamp()
+    .addFields(
+      { name: 'Tipo', value: tipo },
+      { name: 'Razón', value: razon },
+      { name: 'Moderador', value: interaction.user.tag }
+    )
+    .setFooter({ text: `Servidor: ${interaction.guild.name} | ID: ${sanctionId}` });
+
   try {
-    await miembro.send({ embeds: [embedPublico] });
-  } catch {}
+    await miembro.send({ embeds: [embedDM] });
+  } catch (err) {
+    await interaction.followUp({ content: '⚠️ No se pudo enviar DM al usuario.', flags: MessageFlags.Ephemeral });
+  }
 }
 
 async function handleVerSanciones(interaction) {
-  if (!(await checkStaff(interaction))) return;
-  // ... (código original)
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return interaction.reply({ content: '❌ No tienes permisos suficientes.', flags: MessageFlags.Ephemeral });
+  }
   const guildId = interaction.guild.id;
   const lista = sanciones[guildId] || [];
   if (lista.length === 0) {
@@ -566,8 +558,9 @@ async function handleVerSanciones(interaction) {
 }
 
 async function handleVerSancionesUsuario(interaction) {
-  if (!(await checkStaff(interaction))) return;
-  // ... (código original)
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return interaction.reply({ content: '❌ No tienes permisos suficientes.', flags: MessageFlags.Ephemeral });
+  }
   const miembro = interaction.options.getMember('usuario');
   const guildId = interaction.guild.id;
   const lista = sanciones[guildId] || [];
@@ -594,8 +587,10 @@ async function handleVerSancionesUsuario(interaction) {
 }
 
 async function handleEliminarSancion(interaction) {
-  if (!(await checkStaff(interaction))) return;
-  // ... (código original)
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return interaction.reply({ content: '❌ No tienes permisos suficientes.', flags: MessageFlags.Ephemeral });
+  }
+
   const sanctionId = interaction.options.getInteger('id');
   const guildId = interaction.guild.id;
   const lista = sanciones[guildId] || [];
@@ -614,10 +609,9 @@ async function handleEliminarSancion(interaction) {
 }
 
 // ======================
-// VOTACIONES (STAFF)
+// VOTACIONES (versión corregida)
 // ======================
 async function handleVotacion(interaction) {
-  if (!(await checkStaff(interaction))) return;
   await interaction.deferReply();
 
   const embed = new EmbedBuilder()
@@ -663,52 +657,18 @@ async function handleVotacion(interaction) {
   pollData.timeout = setTimeout(() => cerrarVotacionPorTiempo(mensaje.id), 30 * 60 * 1000);
 }
 
-async function handleCancelarVotacion(interaction) {
-  if (!(await checkStaff(interaction))) return;
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  // ... (código original sin cambios)
-  let pollData = null;
-  let messageIdToCancel = null;
-
-  for (const [msgId, data] of votes.entries()) {
-    if (data.channel.id === interaction.channel.id) {
-      pollData = data;
-      messageIdToCancel = msgId;
-      break;
-    }
-  }
-
-  if (!pollData) return interaction.editReply({ content: '❌ No hay ninguna votación activa en este canal.' });
-
-  const isCreator = pollData.creatorId === interaction.user.id;
-  const isAdmin = hasStaffRole(interaction.member);
-
-  if (!isCreator && !isAdmin) {
-    return interaction.editReply({ content: '❌ Solo el creador o Staff puede cancelarla.' });
-  }
-
-  if (pollData.timeout) clearTimeout(pollData.timeout);
-
-  const cancelEmbed = EmbedBuilder.from(pollData.message.embeds[0])
-    .setDescription('**❌ Votación cancelada manualmente**')
-    .setColor(0xFF0000);
-
-  const disabledRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('vote_yes').setLabel('Me uniré').setStyle(ButtonStyle.Success).setEmoji('✅').setDisabled(true),
-    new ButtonBuilder().setCustomId('vote_later').setLabel('Me uniré más tarde').setStyle(ButtonStyle.Primary).setEmoji('⏰').setDisabled(true),
-    new ButtonBuilder().setCustomId('vote_no').setLabel('No me uniré').setStyle(ButtonStyle.Danger).setEmoji('❌').setDisabled(true)
-  );
-
-  await pollData.message.edit({ embeds: [cancelEmbed], components: [disabledRow] });
-  await interaction.editReply({ content: '✅ Votación cancelada correctamente.' });
-  await pollData.channel.send('❌ **La votación ha sido cancelada manualmente.**');
-
-  votes.delete(messageIdToCancel);
-}
-
 async function handleButtonVote(interaction) {
   const pollData = votes.get(interaction.message.id);
-  if (!pollData) return interaction.reply({ content: '❌ Esta votación ya expiró.', flags: MessageFlags.Ephemeral });
+
+  if (!pollData) {
+    const disabledRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('vote_yes').setLabel('Me uniré').setStyle(ButtonStyle.Success).setEmoji('✅').setDisabled(true),
+      new ButtonBuilder().setCustomId('vote_later').setLabel('Me uniré más tarde').setStyle(ButtonStyle.Primary).setEmoji('⏰').setDisabled(true),
+      new ButtonBuilder().setCustomId('vote_no').setLabel('No me uniré').setStyle(ButtonStyle.Danger).setEmoji('❌').setDisabled(true)
+    );
+    try { await interaction.update({ components: [disabledRow] }); } catch (e) {}
+    return interaction.followUp({ content: '❌ Esta votación ya expiró o fue cancelada.', flags: MessageFlags.Ephemeral });
+  }
 
   const customId = interaction.customId;
   const opcion = customId === 'vote_yes' ? 'yes' : customId === 'vote_later' ? 'later' : 'no';
@@ -758,8 +718,49 @@ async function handleButtonVote(interaction) {
   await interaction.update({ embeds: [nuevoEmbed], components: [row] });
 }
 
+async function handleCancelarVotacion(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  let pollData = null;
+  let messageIdToCancel = null;
+
+  for (const [msgId, data] of votes.entries()) {
+    if (data.channel.id === interaction.channel.id) {
+      pollData = data;
+      messageIdToCancel = msgId;
+      break;
+    }
+  }
+
+  if (!pollData) return interaction.editReply({ content: '❌ No hay ninguna votación activa en este canal.' });
+
+  const isCreator = pollData.creatorId === interaction.user.id;
+  const isAdmin = interaction.member.permissions.has(PermissionsBitField.Flags.Administrator);
+
+  if (!isCreator && !isAdmin) {
+    return interaction.editReply({ content: '❌ Solo el creador o un Administrador puede cancelarla.' });
+  }
+
+  if (pollData.timeout) clearTimeout(pollData.timeout);
+
+  const cancelEmbed = EmbedBuilder.from(pollData.message.embeds[0])
+    .setDescription('**❌ Votación cancelada manualmente**')
+    .setColor(0xFF0000);
+
+  const disabledRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('vote_yes').setLabel('Me uniré').setStyle(ButtonStyle.Success).setEmoji('✅').setDisabled(true),
+    new ButtonBuilder().setCustomId('vote_later').setLabel('Me uniré más tarde').setStyle(ButtonStyle.Primary).setEmoji('⏰').setDisabled(true),
+    new ButtonBuilder().setCustomId('vote_no').setLabel('No me uniré').setStyle(ButtonStyle.Danger).setEmoji('❌').setDisabled(true)
+  );
+
+  await pollData.message.edit({ embeds: [cancelEmbed], components: [disabledRow] });
+  await interaction.editReply({ content: '✅ Votación cancelada correctamente.' });
+  await pollData.channel.send('❌ **La votación ha sido cancelada manualmente.**');
+
+  votes.delete(messageIdToCancel);
+}
+
 async function handleAbrirServer(interaction) {
-  if (!(await checkStaff(interaction))) return;
   await interaction.deferReply();
 
   let pollData = null;
@@ -797,7 +798,10 @@ async function handleAbrirServer(interaction) {
     .setImage('https://tenor.com/es/view/abierto-te-esperamos-local-negocio-letrero-gif-12287454104567600625')
     .setTimestamp();
 
-  await interaction.editReply({ content: pingContent, embeds: [embed] });
+  await interaction.editReply({
+    content: pingContent,
+    embeds: [embed]
+  });
 }
 
 async function abrirServidorAutomatico(channel, pollData) {
@@ -821,11 +825,13 @@ async function abrirServidorAutomatico(channel, pollData) {
     .setImage('https://tenor.com/es/view/abierto-te-esperamos-local-negocio-letrero-gif-12287454104567600625')
     .setTimestamp();
 
-  await channel.send({ content: pingContent, embeds: [embed] });
+  await channel.send({
+    content: pingContent,
+    embeds: [embed]
+  });
 }
 
 async function handleCerrarServer(interaction) {
-  if (!(await checkStaff(interaction))) return;
   await interaction.deferReply();
 
   serverAbierto = false;
@@ -853,9 +859,14 @@ async function cerrarVotacionPorTiempo(messageId) {
     new ButtonBuilder().setCustomId('vote_no').setLabel('No me uniré').setStyle(ButtonStyle.Danger).setEmoji('❌').setDisabled(true)
   );
 
-  await pollData.message.edit({ embeds: [nuevoEmbed], components: [disabledRow] });
-  await pollData.channel.send('⏰ **La votación ha expirado** después de 30 minutos.');
+  try {
+    await pollData.message.edit({ embeds: [nuevoEmbed], components: [disabledRow] });
+    await pollData.channel.send('⏰ **La votación ha expirado** después de 30 minutos.');
+  } catch (error) {
+    console.error('❌ Error al cerrar votación por tiempo:', error);
+  }
 
+  if (pollData.timeout) clearTimeout(pollData.timeout);
   votes.delete(messageId);
 }
 
@@ -863,7 +874,10 @@ async function cerrarVotacionPorTiempo(messageId) {
 // PANEL DNI
 // ======================
 async function handlePanelDni(interaction) {
-  if (!(await checkStaff(interaction))) return;
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo los administradores pueden crear el panel de DNI.', flags: MessageFlags.Ephemeral });
+  }
+
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const embed = new EmbedBuilder()
@@ -898,13 +912,9 @@ async function handlePanelDni(interaction) {
 }
 
 // ======================
-
-// BOTONES Y MODALES DNI (sin cambios)
-
+// BOTONES DEL SISTEMA DNI
 // ======================
-
 async function handleDniButton(interaction) {
-  // ... (código original completo sin cambios)
   try {
     const customId = interaction.customId;
     let modal;
@@ -956,15 +966,17 @@ async function handleDniButton(interaction) {
   }
 }
 
-
+// ======================
+// MODALES DEL SISTEMA DNI + ARRESTO
+// ======================
 async function handleModalSubmit(interaction) {
-  // ... (código original completo sin cambios - muy largo, pero se mantiene igual)
   try {
     const customId = interaction.customId;
     const guildId = interaction.guild.id;
     const userId = interaction.user.id;
     const userData = getUserData(guildId, userId);
 
+    // ==================== CREAR DNI ====================
     if (customId === 'modal-dni-crear') {
       const pj = interaction.fields.getTextInputValue('pj').trim();
       const nombreCompleto = interaction.fields.getTextInputValue('nombreCompleto').trim();
@@ -972,9 +984,15 @@ async function handleModalSubmit(interaction) {
       const nacionalidad = interaction.fields.getTextInputValue('nacionalidad').trim();
       const genero = interaction.fields.getTextInputValue('genero').trim();
 
-      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
-      if (userData.pjs[pj].dni) return interaction.reply({ content: `❌ Ya tienes un DNI creado para el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(fechaNac)) return interaction.reply({ content: '❌ Formato de fecha incorrecto. Usa DD/MM/AAAA', flags: MessageFlags.Ephemeral });
+      if (pj !== '1' && pj !== '2') {
+        return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
+      }
+      if (userData.pjs[pj].dni) {
+        return interaction.reply({ content: `❌ Ya tienes un DNI creado para el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+      }
+      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(fechaNac)) {
+        return interaction.reply({ content: '❌ Formato de fecha incorrecto. Usa DD/MM/AAAA', flags: MessageFlags.Ephemeral });
+      }
 
       const [nombre, ...apellidoParts] = nombreCompleto.split(' ');
       const apellido = apellidoParts.join(' ') || 'Sin apellido';
@@ -982,7 +1000,16 @@ async function handleModalSubmit(interaction) {
       const dniNumero = Math.floor(10000000 + Math.random() * 90000000).toString();
       const fechaCreacion = new Date().toLocaleDateString('es-ES');
 
-      userData.pjs[pj].dni = { numero: dniNumero, nombre, apellido, fechaNac, nacionalidad, genero, fechaCreacion };
+      userData.pjs[pj].dni = {
+        numero: dniNumero,
+        nombre,
+        apellido,
+        fechaNac,
+        nacionalidad,
+        genero,
+        fechaCreacion
+      };
+
       guardarIdentidades();
 
       const embed = new EmbedBuilder()
@@ -1001,8 +1028,183 @@ async function handleModalSubmit(interaction) {
       return;
     }
 
-    // (El resto de modales de ver/borrar/carnet/licencia se mantienen exactamente igual al código original)
-    // ... (por brevedad no repito todo aquí, pero en tu archivo está completo)
+    // ==================== VER / BORRAR DNI ====================
+    if (customId === 'modal-dni-ver' || customId === 'modal-dni-borrar') {
+      const pj = interaction.fields.getTextInputValue('pj').trim();
+      if (pj !== '1' && pj !== '2') {
+        return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
+      }
+
+      const dni = userData.pjs[pj].dni;
+      if (!dni) {
+        return interaction.reply({ content: `❌ No tienes DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+      }
+
+      if (customId === 'modal-dni-ver') {
+        const embed = new EmbedBuilder()
+          .setTitle(`🔎 DNI OFICIAL - PJ${pj}`)
+          .setColor(0x00AAFF)
+          .addFields(
+            { name: 'DNI', value: dni.numero, inline: true },
+            { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
+            { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
+            { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
+            { name: 'Género', value: dni.genero, inline: true },
+            { name: 'Creado', value: dni.fechaCreacion, inline: true }
+          )
+          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
+
+        const channel = interaction.guild.channels.cache.get(DNI_CHANNEL_ID);
+        if (channel) {
+          await channel.send({ embeds: [embed] });
+          await interaction.reply({ content: `✅ DNI del PJ${pj} enviado al canal correspondiente.`, flags: MessageFlags.Ephemeral });
+        } else {
+          await interaction.reply({ content: '❌ No se encontró el canal de DNI.', flags: MessageFlags.Ephemeral });
+        }
+      } else {
+        userData.pjs[pj].dni = null;
+        userData.pjs[pj].carnetConducir = null;
+        userData.pjs[pj].licenciaArmas = null;
+        guardarIdentidades();
+        await interaction.reply({ content: `🗑️ DNI y documentos del PJ${pj} eliminados.`, flags: MessageFlags.Ephemeral });
+      }
+      return;
+    }
+
+    // ==================== CARNET DE CONDUCIR ====================
+    if (customId.startsWith('modal-carnet-')) {
+      const action = customId.split('-')[2];
+      const pj = interaction.fields.getTextInputValue('pj').trim();
+
+      if (pj !== '1' && pj !== '2') {
+        return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
+      }
+
+      const dni = userData.pjs[pj].dni;
+      if (!dni) {
+        return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, flags: MessageFlags.Ephemeral });
+      }
+
+      if (action === 'crear') {
+        if (userData.pjs[pj].carnetConducir) {
+          return interaction.reply({ content: `❌ Ya tienes carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        }
+        const numero = `CC-${Math.floor(1000 + Math.random() * 9000)}`;
+        const fecha = new Date().toLocaleDateString('es-ES');
+        userData.pjs[pj].carnetConducir = { numero, fechaEmision: fecha };
+        guardarIdentidades();
+        await interaction.reply({ content: `✅ Carnet de Conducir creado para PJ${pj}\n**Número:** ${numero}`, flags: MessageFlags.Ephemeral });
+      } 
+      else if (action === 'ver') {
+        const carnet = userData.pjs[pj].carnetConducir;
+        if (!carnet) return interaction.reply({ content: `❌ No tienes carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+        const embed = new EmbedBuilder()
+          .setTitle(`🚗 CARNET DE CONDUCIR - PJ${pj}`)
+          .setColor(0x00FF88)
+          .addFields(
+            { name: 'Número', value: carnet.numero, inline: true },
+            { name: 'Emitido', value: carnet.fechaEmision, inline: true }
+          )
+          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
+
+        const channel = interaction.guild.channels.cache.get(CARNET_CHANNEL_ID);
+        if (channel) {
+          await channel.send({ embeds: [embed] });
+          await interaction.reply({ content: `✅ Carnet enviado al canal de Carnets.`, flags: MessageFlags.Ephemeral });
+        } else {
+          await interaction.reply({ content: '❌ No se encontró el canal de Carnets.', flags: MessageFlags.Ephemeral });
+        }
+      } 
+      else if (action === 'borrar') {
+        if (!userData.pjs[pj].carnetConducir) {
+          return interaction.reply({ content: `❌ No tienes carnet para borrar en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        }
+        userData.pjs[pj].carnetConducir = null;
+        guardarIdentidades();
+        await interaction.reply({ content: `🗑️ Carnet de conducir del PJ${pj} eliminado.`, flags: MessageFlags.Ephemeral });
+      }
+      return;
+    }
+
+    // ==================== LICENCIA DE ARMAS ====================
+    if (customId.startsWith('modal-licencia-')) {
+      const action = customId.split('-')[2];
+      const pj = interaction.fields.getTextInputValue('pj').trim();
+
+      if (pj !== '1' && pj !== '2') {
+        return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
+      }
+
+      const dni = userData.pjs[pj].dni;
+      if (!dni) {
+        return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, flags: MessageFlags.Ephemeral });
+      }
+
+      if (action === 'crear') {
+        if (userData.pjs[pj].licenciaArmas) {
+          return interaction.reply({ content: `❌ Ya tienes licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        }
+        const numero = `LA-${Math.floor(1000 + Math.random() * 9000)}`;
+        const fecha = new Date().toLocaleDateString('es-ES');
+        userData.pjs[pj].licenciaArmas = { numero, fechaEmision: fecha };
+        guardarIdentidades();
+        await interaction.reply({ content: `✅ Licencia de Armas creada para PJ${pj}\n**Número:** ${numero}`, flags: MessageFlags.Ephemeral });
+      } 
+      else if (action === 'ver') {
+        const licencia = userData.pjs[pj].licenciaArmas;
+        if (!licencia) return interaction.reply({ content: `❌ No tienes licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+        const embed = new EmbedBuilder()
+          .setTitle(`🔫 LICENCIA DE ARMAS - PJ${pj}`)
+          .setColor(0xFF8800)
+          .addFields(
+            { name: 'Número', value: licencia.numero, inline: true },
+            { name: 'Emitida', value: licencia.fechaEmision, inline: true }
+          )
+          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
+
+        const channel = interaction.guild.channels.cache.get(LICENCIA_CHANNEL_ID);
+        if (channel) {
+          await channel.send({ embeds: [embed] });
+          await interaction.reply({ content: `✅ Licencia enviada al canal de Licencias.`, flags: MessageFlags.Ephemeral });
+        } else {
+          await interaction.reply({ content: '❌ No se encontró el canal de Licencias.', flags: MessageFlags.Ephemeral });
+        }
+      } 
+      else if (action === 'borrar') {
+        if (!userData.pjs[pj].licenciaArmas) {
+          return interaction.reply({ content: `❌ No tienes licencia para borrar en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        }
+        userData.pjs[pj].licenciaArmas = null;
+        guardarIdentidades();
+        await interaction.reply({ content: `🗑️ Licencia de armas del PJ${pj} eliminada.`, flags: MessageFlags.Ephemeral });
+      }
+      return;
+    }
+
+    // ==================== ARRESTO ====================
+    if (customId === 'modal-arrestar') {
+      const nombreIC = interaction.fields.getTextInputValue('nombre_ic');
+      const articulos = interaction.fields.getTextInputValue('articulos');
+      const policias = interaction.fields.getTextInputValue('policias');
+      const tiempo = interaction.fields.getTextInputValue('tiempo');
+
+      const embed = new EmbedBuilder()
+        .setTitle('🚔 ARRESTO REGISTRADO')
+        .setColor(0xFF0000)
+        .setTimestamp()
+        .addFields(
+          { name: '👤 Nombre IC (arrestado)', value: nombreIC, inline: false },
+          { name: '📜 Artículos', value: articulos, inline: false },
+          { name: '👮 Policías', value: policias, inline: false },
+          { name: '⏳ Tiempo en cárcel', value: tiempo, inline: false }
+        )
+        .setFooter({ text: `Arrestado por: ${interaction.user.tag}` });
+
+      await interaction.reply({ embeds: [embed] });
+      return;
+    }
 
   } catch (error) {
     console.error('❌ Error en handleModalSubmit:', error);
@@ -1013,10 +1215,45 @@ async function handleModalSubmit(interaction) {
 }
 
 // ======================
-// ECONOMÍA + MULTA ACTUALIZADA
+// COMANDOS POLICÍA Y STAFF
 // ======================
+async function handleBuscarDni(interaction) {
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) {
+    return interaction.reply({ content: '❌ Solo Policía y Staff pueden usar este comando.', flags: MessageFlags.Ephemeral });
+  }
+
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+
+  const userData = getUserData(interaction.guild.id, target.id);
+  const dni = userData.pjs[pj].dni;
+
+  if (!dni) {
+    return interaction.reply({ content: `❌ **${target}** no tiene DNI registrado en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🔍 DNI ENCONTRADO - PJ${pj}`)
+    .setColor(0x00AAFF)
+    .setThumbnail(target.user.displayAvatarURL())
+    .addFields(
+      { name: '👤 Usuario', value: `${target} (\`${target.id}\`)`, inline: false },
+      { name: '🪪 DNI', value: dni.numero, inline: true },
+      { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
+      { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
+      { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
+      { name: 'Género', value: dni.genero, inline: true },
+      { name: 'Creado', value: dni.fechaCreacion, inline: true }
+    );
+
+  await interaction.reply({ embeds: [embed] });
+}
+
 async function handleMulta(interaction) {
-  if (!(await checkStaff(interaction))) return;
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) {
+    return interaction.reply({ content: '❌ Solo Policía puede multar.', flags: MessageFlags.Ephemeral });
+  }
+
   const miembro = interaction.options.getMember('usuario');
   const cantidad = interaction.options.getInteger('cantidad');
   const razon = interaction.options.getString('razon');
@@ -1061,11 +1298,114 @@ async function handleMulta(interaction) {
 
   await interaction.reply({ embeds: [embed] });
 
-  try { await miembro.send({ embeds: [embed] }); } catch {}
+  try {
+    await miembro.send({ embeds: [embed] });
+  } catch {}
+}
+
+async function handleArrestar(interaction) {
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) {
+    return interaction.reply({ content: '❌ Solo Policía puede arrestar.', flags: MessageFlags.Ephemeral });
+  }
+
+  const modal = new ModalBuilder()
+    .setCustomId('modal-arrestar')
+    .setTitle('🚔 Formulario de Arresto');
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nombre_ic').setLabel('Nombre IC (arrestado)').setStyle(TextInputStyle.Short).setRequired(true)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('articulos').setLabel('Artículos').setStyle(TextInputStyle.Paragraph).setRequired(true)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('policias').setLabel('Policías que realizaron el arresto').setStyle(TextInputStyle.Short).setRequired(true)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('tiempo').setLabel('Tiempo en cárcel (ej: 30 minutos)').setStyle(TextInputStyle.Short).setRequired(true))
+  );
+
+  await interaction.showModal(modal);
+}
+
+async function handleVerDniPublico(interaction) {
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+
+  const userData = getUserData(interaction.guild.id, target.id);
+  const dni = userData.pjs[pj].dni;
+
+  if (!dni) {
+    return interaction.reply({ content: `❌ **${target}** no tiene DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🔍 DNI DE ${target.user.tag} - PJ${pj}`)
+    .setColor(0x00AAFF)
+    .setThumbnail(target.user.displayAvatarURL())
+    .addFields(
+      { name: '🪪 DNI', value: dni.numero, inline: true },
+      { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
+      { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
+      { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
+      { name: 'Género', value: dni.genero, inline: true },
+      { name: 'Creado', value: dni.fechaCreacion, inline: true }
+    );
+
+  await interaction.reply({ embeds: [embed] });
 }
 
 // ======================
-// ECONOMÍA - TODAS LAS FUNCIONES
+// ANUNCIO RP (corregido)
+// ======================
+async function handleAnuncioRp(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return interaction.reply({ content: '❌ Solo Staff puede crear anuncios.', flags: MessageFlags.Ephemeral });
+  }
+
+  const titulo = interaction.options.getString('titulo');
+  const descripcion = interaction.options.getString('descripcion');
+  let colorHex = interaction.options.getString('color') || '#00FFAA';
+  const color = parseInt(colorHex.replace('#', ''), 16);
+
+  const embed = new EmbedBuilder()
+    .setTitle(titulo)
+    .setDescription(descripcion)
+    .setColor(color)
+    .setTimestamp()
+    .setFooter({ text: `Anuncio RP • ${interaction.guild.name}` });
+
+  await interaction.reply({ embeds: [embed] });
+}
+
+// ======================
+// ESTADO SERVER
+// ======================
+async function handleEstadoServer(interaction) {
+  const estado = serverAbierto ? '🟢 **ABIERTO**' : '🔴 **CERRADO**';
+
+  let texto = `**Estado actual:** ${estado}\n`;
+
+  if (serverAbierto && ultimaApertura) {
+    texto += `**Abierto desde:** <t:${Math.floor(ultimaApertura / 1000)}:R>\n`;
+  }
+
+  let votacionActiva = 'No hay votación activa.';
+  for (const [_, poll] of votes.entries()) {
+    if (poll.channel.id === interaction.channel.id) {
+      const total = poll.yes + poll.later + poll.no;
+      votacionActiva = `✅ **Votación activa** (${total} votos)`;
+      break;
+    }
+  }
+
+  texto += `\n${votacionActiva}`;
+
+  const embed = new EmbedBuilder()
+    .setTitle('📡 ESTADO DEL SERVIDOR RP')
+    .setDescription(texto)
+    .setColor(serverAbierto ? 0x00FF00 : 0xFF0000)
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [embed] });
+}
+
+// ======================
+// ECONOMÍA
 // ======================
 async function handleBalance(interaction) {
   const target = interaction.options.getMember('usuario') || interaction.member;
@@ -1081,7 +1421,10 @@ async function handleBalance(interaction) {
 }
 
 async function handleAddMoney(interaction) {
-  if (!(await checkStaff(interaction))) return;
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
+  }
+
   const target = interaction.options.getMember('usuario');
   const cantidad = interaction.options.getInteger('cantidad');
   const userData = getUserData(interaction.guild.id, target.id);
@@ -1139,12 +1482,16 @@ async function handleTransferir(interaction) {
   const target = interaction.options.getMember('usuario');
   const cantidad = interaction.options.getInteger('cantidad');
 
-  if (cantidad < 100) return interaction.reply({ content: '❌ La cantidad mínima es 100 $.', flags: MessageFlags.Ephemeral });
+  if (cantidad < 100) {
+    return interaction.reply({ content: '❌ La cantidad mínima es 100 $.', flags: MessageFlags.Ephemeral });
+  }
 
   const userData = getUserData(interaction.guild.id, interaction.user.id);
   const targetData = getUserData(interaction.guild.id, target.id);
 
-  if (userData.dinero < cantidad) return interaction.reply({ content: '❌ No tienes suficiente dinero.', flags: MessageFlags.Ephemeral });
+  if (userData.dinero < cantidad) {
+    return interaction.reply({ content: '❌ No tienes suficiente dinero.', flags: MessageFlags.Ephemeral });
+  }
 
   userData.dinero -= cantidad;
   targetData.dinero += cantidad;
@@ -1166,10 +1513,15 @@ async function handleApostar(interaction) {
   const cantidad = interaction.options.getInteger('cantidad');
   const opcion = interaction.options.getString('opcion');
 
-  if (cantidad < 100) return interaction.reply({ content: '❌ La apuesta mínima es 100 $.', flags: MessageFlags.Ephemeral });
+  if (cantidad < 100) {
+    return interaction.reply({ content: '❌ La apuesta mínima es 100 $.', flags: MessageFlags.Ephemeral });
+  }
 
   const userData = getUserData(interaction.guild.id, interaction.user.id);
-  if (userData.dinero < cantidad) return interaction.reply({ content: '❌ No tienes suficiente dinero.', flags: MessageFlags.Ephemeral });
+
+  if (userData.dinero < cantidad) {
+    return interaction.reply({ content: '❌ No tienes suficiente dinero.', flags: MessageFlags.Ephemeral });
+  }
 
   const gana = Math.random() < 0.5;
 
@@ -1209,80 +1561,31 @@ async function handleLeaderboard(interaction) {
     .sort((a, b) => b.dinero - a.dinero)
     .slice(0, 10);
 
-  if (ranking.length === 0) return interaction.editReply('📭 Todavía no hay nadie con dinero registrado.');
+  if (ranking.length === 0) {
+    return interaction.editReply('📭 Todavía no hay nadie con dinero.');
+  }
 
-  const embed = new EmbedBuilder().setTitle('🏆 TOP 10 MÁS RICOS').setColor(0xFFD700);
+  const embed = new EmbedBuilder()
+    .setTitle('🏆 TABLA DE CLASIFICACIÓN - MÁS RICOS')
+    .setColor(0xFFD700)
+    .setTimestamp();
 
   ranking.forEach((entry, i) => {
     const member = interaction.guild.members.cache.get(entry.userId);
-    const name = member ? member.user.tag : `Usuario ${entry.userId}`;
-    embed.addFields({ name: `#${i + 1} ${name}`, value: `**$${entry.dinero.toLocaleString('es-ES')}**`, inline: false });
+    const name = member ? member.user.tag : `ID: ${entry.userId}`;
+    const medalla = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**#${i+1}**`;
+    embed.addFields({
+      name: `${medalla} ${name}`,
+      value: `**$${entry.dinero.toLocaleString('es-ES')}**`,
+      inline: false
+    });
   });
 
   await interaction.editReply({ embeds: [embed] });
 }
 
 // ======================
-// IDEA EXTRA: /trabajar (cada 8 horas)
-// ======================
-async function handleTrabajar(interaction) {
-  await interaction.deferReply();
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-
-  const ahora = Date.now();
-  if (userData.lastTrabajo && ahora - userData.lastTrabajo < 28800000) { // 8 horas
-    const horasRestantes = Math.ceil((28800000 - (ahora - userData.lastTrabajo)) / 3600000);
-    return interaction.editReply(`⏳ Ya trabajaste. Próximo trabajo en **${horasRestantes} horas**.`);
-  }
-
-  const ganancia = Math.floor(Math.random() * 800) + 800; // entre 800 y 1599
-  userData.dinero += ganancia;
-  userData.lastTrabajo = ahora;
-  guardarIdentidades();
-
-  const embed = new EmbedBuilder()
-    .setTitle('💼 ¡Trabajo completado!')
-    .setColor(0x00FFAA)
-    .addFields(
-      { name: 'Ganancia', value: `**+$${ganancia.toLocaleString('es-ES')}**`, inline: false },
-      { name: 'Nuevo balance', value: `**$${userData.dinero.toLocaleString('es-ES')}**`, inline: false }
-    );
-
-  await interaction.editReply({ embeds: [embed] });
-}
-
-// ======================
-// ESTADO SERVER
-// ======================
-async function handleEstadoServer(interaction) {
-  const estado = serverAbierto ? '🟢 **ABIERTO**' : '🔴 **CERRADO**';
-  let texto = `**Estado actual:** ${estado}\n`;
-
-  if (serverAbierto && ultimaApertura) {
-    texto += `**Abierto desde:** <t:${Math.floor(ultimaApertura / 1000)}:R>\n`;
-  }
-
-  let votacionActiva = 'No hay votación activa.';
-  for (const [_, poll] of votes.entries()) {
-    if (poll.channel.id === interaction.channel.id) {
-      const total = poll.yes + poll.later + poll.no;
-      votacionActiva = `✅ **Votación activa** (${total} votos)`;
-      break;
-    }
-  }
-  texto += `\n${votacionActiva}`;
-
-  const embed = new EmbedBuilder()
-    .setTitle('📡 ESTADO DEL SERVIDOR RP')
-    .setDescription(texto)
-    .setColor(serverAbierto ? 0x00FF00 : 0xFF0000)
-    .setTimestamp();
-
-  await interaction.reply({ embeds: [embed] });
-}
-
-// ======================
-// LOGIN
+// LOGIN DEL BOT
 // ======================
 client.login(process.env.TOKEN)
   .catch(err => console.error('❌ Error al iniciar sesión:', err));
