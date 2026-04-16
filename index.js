@@ -1,5 +1,9 @@
 // ======================
+<<<<<<< HEAD
 // BOT DE GESTIÓN ALBACETE RP - VERSIÓN COMPLETA OPTIMIZADA + ECONOMÍA + IDEAS EXTRA
+=======
+// BOT DE GESTIÓN ALBACETE RP - Versión Final COMPLETA con Comandos Admin
+>>>>>>> 8802fc7cd2624ceeb99fdbdc5420836e1067d696
 // ======================
 
 require('dotenv').config();
@@ -112,7 +116,11 @@ function getVoterList(pollData, type) {
 }
 
 // ======================
+<<<<<<< HEAD
 // SISTEMA DE IDENTIDADES + ECONOMÍA
+=======
+// SISTEMA DE IDENTIDADES
+>>>>>>> 8802fc7cd2624ceeb99fdbdc5420836e1067d696
 // ======================
 const IDENTIDADES_FILE = path.join(__dirname, 'identidades.json');
 let identidades = {};
@@ -232,16 +240,24 @@ client.once(Events.ClientReady, async () => {
     
     new SlashCommandBuilder().setName('panel-dni').setDescription('Crea el panel oficial del sistema de DNI'),
 
+<<<<<<< HEAD
     // ==================== COMANDOS ADMIN (solo STAFF_ROLE) ====================
     new SlashCommandBuilder()
       .setName('borrar-dni-admin')
       .setDescription('🔧 [STAFF] Borra el DNI y todos los documentos de un usuario')
+=======
+    // ==================== COMANDOS ADMIN ====================
+    new SlashCommandBuilder()
+      .setName('borrar-dni-admin')
+      .setDescription('🔧 [ADMIN] Borra el DNI y todos los documentos de un usuario')
+>>>>>>> 8802fc7cd2624ceeb99fdbdc5420836e1067d696
       .addUserOption(opt => opt.setName('usuario').setDescription('Usuario al que borrar DNI').setRequired(true))
       .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
         .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
 
     new SlashCommandBuilder()
       .setName('ver-dni-admin')
+<<<<<<< HEAD
       .setDescription('🔧 [STAFF] Ver DNI de cualquier usuario')
       .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a consultar').setRequired(true))
       .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
@@ -320,6 +336,12 @@ client.once(Events.ClientReady, async () => {
     new SlashCommandBuilder()
       .setName('trabajar')
       .setDescription('💼 Trabajar y ganar dinero (cada 8 horas)'),
+=======
+      .setDescription('🔧 [ADMIN] Ver DNI de cualquier usuario')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a consultar').setRequired(true))
+      .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
+        .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' }))
+>>>>>>> 8802fc7cd2624ceeb99fdbdc5420836e1067d696
   ];
 
   for (const guild of client.guilds.cache.values()) {
@@ -353,6 +375,7 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'panel-dni': await handlePanelDni(interaction); break;
         case 'borrar-dni-admin': await handleBorrarDniAdmin(interaction); break;
         case 'ver-dni-admin': await handleVerDniAdmin(interaction); break;
+<<<<<<< HEAD
         case 'buscar-dni': await handleBuscarDni(interaction); break;
         case 'multa': await handleMulta(interaction); break;
         case 'anuncio-rp': await handleAnuncioRp(interaction); break;
@@ -364,6 +387,8 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'apostar': await handleApostar(interaction); break;
         case 'leaderboard': await handleLeaderboard(interaction); break;
         case 'trabajar': await handleTrabajar(interaction); break;
+=======
+>>>>>>> 8802fc7cd2624ceeb99fdbdc5420836e1067d696
       }
       return;
     }
@@ -393,7 +418,67 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 
 // ======================
+<<<<<<< HEAD
 // COMANDOS ADMIN / STAFF (PROTEGIDOS)
+=======
+// COMANDOS ADMIN
+// ======================
+async function handleBorrarDniAdmin(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo los administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
+  }
+
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+
+  const userData = getUserData(interaction.guild.id, target.id);
+
+  if (!userData.pjs[pj].dni) {
+    return interaction.reply({ content: `❌ **${target}** no tiene DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+  }
+
+  userData.pjs[pj].dni = null;
+  userData.pjs[pj].carnetConducir = null;
+  userData.pjs[pj].licenciaArmas = null;
+  guardarIdentidades();
+
+  await interaction.reply(`✅ **DNI y todos los documentos del PJ${pj} de ${target} han sido eliminados.**`);
+}
+
+async function handleVerDniAdmin(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo los administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
+  }
+
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+
+  const userData = getUserData(interaction.guild.id, target.id);
+  const dni = userData.pjs[pj].dni;
+
+  if (!dni) {
+    return interaction.reply({ content: `❌ **${target}** no tiene DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🔎 DNI de ${target.user.tag} - PJ${pj}`)
+    .setColor(0x00AAFF)
+    .addFields(
+      { name: 'DNI', value: dni.numero, inline: true },
+      { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
+      { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
+      { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
+      { name: 'Género', value: dni.genero, inline: true },
+      { name: 'Creado', value: dni.fechaCreacion, inline: true }
+    )
+    .setThumbnail(target.user.displayAvatarURL());
+
+  await interaction.reply({ embeds: [embed] });
+}
+
+// ======================
+// SANCIONES
+>>>>>>> 8802fc7cd2624ceeb99fdbdc5420836e1067d696
 // ======================
 async function checkStaff(interaction) {
   if (!hasStaffRole(interaction.member)) {
@@ -614,7 +699,11 @@ async function handleEliminarSancion(interaction) {
 }
 
 // ======================
+<<<<<<< HEAD
 // VOTACIONES (STAFF)
+=======
+// VOTACIONES
+>>>>>>> 8802fc7cd2624ceeb99fdbdc5420836e1067d696
 // ======================
 async function handleVotacion(interaction) {
   if (!(await checkStaff(interaction))) return;
@@ -863,7 +952,14 @@ async function cerrarVotacionPorTiempo(messageId) {
 // PANEL DNI
 // ======================
 async function handlePanelDni(interaction) {
+<<<<<<< HEAD
   if (!(await checkStaff(interaction))) return;
+=======
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo los administradores pueden crear el panel de DNI.', flags: MessageFlags.Ephemeral });
+  }
+
+>>>>>>> 8802fc7cd2624ceeb99fdbdc5420836e1067d696
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const embed = new EmbedBuilder()
@@ -898,7 +994,11 @@ async function handlePanelDni(interaction) {
 }
 
 // ======================
+<<<<<<< HEAD
 // BOTONES Y MODALES DNI (sin cambios)
+=======
+// BOTONES DEL SISTEMA DNI
+>>>>>>> 8802fc7cd2624ceeb99fdbdc5420836e1067d696
 // ======================
 async function handleDniButton(interaction) {
   // ... (código original completo sin cambios)
@@ -953,6 +1053,10 @@ async function handleDniButton(interaction) {
   }
 }
 
+// ======================
+// MODALES DEL SISTEMA DNI
+// ======================
+8802fc7cd2624ceeb99fdbdc5420836e1067d696
 async function handleModalSubmit(interaction) {
   // ... (código original completo sin cambios - muy largo, pero se mantiene igual)
   try {
