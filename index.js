@@ -1,5 +1,5 @@
 // ======================
-// BOT DE GESTIÓN ALBACETE RP - VERSIÓN FINAL COMPLETA Y LIMPIA
+// BOT DE GESTIÓN ALBACETE RP - CÓDIGO COMPLETO Y EXTENDIDO
 // ======================
 
 require('dotenv').config();
@@ -10,7 +10,7 @@ require('dotenv').config();
 const express = require('express');
 const app = express();
 app.get('/', (req, res) => {
-  res.send('✅ Bot de Discord Albacete RP está vivo y funcionando en Render');
+  res.send('✅ Bot de Discord está vivo y funcionando en Render');
 });
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
@@ -49,12 +49,15 @@ const client = new Client({
 });
 
 // ======================
-// CONFIGURACIÓN
+// CONFIGURACIÓN DE CANALES
 // ======================
 const DNI_CHANNEL_ID = '1466563810784444478';
 const CARNET_CHANNEL_ID = '1457570708497371332';
 const LICENCIA_CHANNEL_ID = '1493631768169939136';
 
+// ======================
+// ROLES AUTORIZADOS PARA POLICÍA (multa y arrestar)
+// ======================
 const POLICE_ROLES = [
   '1457537988132343858',
   '1457538324578439396',
@@ -62,19 +65,11 @@ const POLICE_ROLES = [
 ];
 
 // ======================
-// ARCHIVOS DE DATOS
+// SISTEMA DE SANCIONES
 // ======================
 const SANCTIONS_FILE = path.join(__dirname, 'sanciones.json');
-const IDENTIDADES_FILE = path.join(__dirname, 'identidades.json');
-const SUBASTAS_FILE = path.join(__dirname, 'subastas.json');
-
 let sanciones = {};
-let identidades = {};
-let subastasActivas = {};
 
-// ======================
-// CARGAR Y GUARDAR
-// ======================
 function cargarSanciones() {
   if (fs.existsSync(SANCTIONS_FILE)) {
     try {
@@ -99,11 +94,63 @@ function guardarSanciones() {
   }
 }
 
+// ======================
+// SISTEMA DE VOTACIONES
+// ======================
+const votes = new Map();
+
+function createProgressBar(votosQueCuentan, maximo = 5) {
+  const porcentaje = Math.min(Math.round((votosQueCuentan / maximo) * 100), 100);
+  const segmentos = Math.round(10 * (votosQueCuentan / maximo));
+  const barra = '█'.repeat(segmentos) + '░'.repeat(10 - segmentos);
+  return votosQueCuentan >= maximo 
+    ? `✅ **COMPLETADO** (${porcentaje}%)` 
+    : `${barra} **${porcentaje}%**`;
+}
+
+function getVoterList(pollData, type) {
+  const list = [];
+  for (const [userId, opcion] of pollData.voters.entries()) {
+    if (opcion === type) {
+      const name = pollData.voterNames.get(userId) || 'Usuario desconocido';
+      list.push(name);
+    }
+  }
+  return list.length > 0 ? list.join(', ') : 'Nadie';
+}
+
+// ======================
+// SISTEMA DE ECONOMÍA
+// ======================
+const SALARY_BASE = 1500;
+const ROLE_BONUSES = {
+  // 🔥 REEMPLAZA ESTOS IDs CON LOS ROLES REALES DE TU SERVIDOR
+  '1467525875007230055': 1000,
+  '1457538526173462670': 1000,
+  '1457538324578439396': 1000,
+  '1457537988132343858': 1000,
+  '1457537819814789242': 800,
+  '1457537536019665017': 1000,
+  '1457537243714420797': 1000,
+  '1457536868630532328': 1000,
+  '1464767715083550966': -250,
+};
+
+// Estado del servidor
+let serverAbierto = false;
+let ultimaApertura = null;
+
+// ======================
+// SISTEMA DE IDENTIDADES
+// ======================
+const IDENTIDADES_FILE = path.join(__dirname, 'identidades.json');
+let identidades = {};
+
 function cargarIdentidades() {
   if (fs.existsSync(IDENTIDADES_FILE)) {
     try {
       identidades = JSON.parse(fs.readFileSync(IDENTIDADES_FILE, 'utf-8'));
-      console.log('✅ Identidades cargadas correctamente.');
+      console.log('✅ Identidades (DNI + Economía) cargadas correctamente.');
     } catch (error) {
       console.error('❌ Error al cargar identidades:', error.message);
       identidades = {};
@@ -134,6 +181,10 @@ function getUserData(guildId, userId) {
       dinero: 6000,
       lastSalary: null
     };
+  } else {
+    // Inicializar economía en usuarios antiguos
+    if (typeof identidades[guildId][userId].dinero !== 'number') identidades[guildId][userId].dinero = 6000;
+    if (!identidades[guildId][userId].lastSalary) identidades[guildId][userId].lastSalary = null;
   }
   return identidades[guildId][userId];
 }
@@ -152,34 +203,130 @@ client.once(Events.ClientReady, async () => {
     new SlashCommandBuilder().setName('abrirserver').setDescription('Abre el servidor manualmente'),
     new SlashCommandBuilder().setName('cerrarserver').setDescription('Cierra el servidor'),
     new SlashCommandBuilder().setName('cancelarvotacion').setDescription('Cancela la votación activa en este canal'),
+    
+    new SlashCommandBuilder()
+      .setName('sancionar')
+      .setDescription('Registra una sanción')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a sancionar').setRequired(true))
+      .addStringOption(opt =>
+        opt.setName('gravedad')
+          .setDescription('Tipo de sanción')
+          .setRequired(true)
+          .addChoices(
+            { name: '⚠️ Aviso', value: 'aviso' },
+            { name: '📝 Falta Leve', value: 'leve' },
+            { name: '⚠️ Falta Moderada', value: 'moderada' },
+            { name: '🚨 Falta Grave', value: 'grave' }
+          ))
+      .addStringOption(opt => opt.setName('razon').setDescription('Razón de la sanción').setRequired(false)),
+    
+    new SlashCommandBuilder().setName('sanciones').setDescription('Ver todas las sanciones del servidor'),
+    new SlashCommandBuilder()
+      .setName('sanciones_usuario')
+      .setDescription('Ver sanciones de un usuario')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)),
+    new SlashCommandBuilder()
+      .setName('eliminarsancion')
+      .setDescription('Eliminar una sanción por ID')
+      .addIntegerOption(opt => opt.setName('id').setDescription('ID de la sanción').setRequired(true)),
+    
     new SlashCommandBuilder().setName('panel-dni').setDescription('Crea el panel oficial del sistema de DNI'),
 
-    // Sanciones y Multas
-    new SlashCommandBuilder().setName('sancionar').setDescription('Registra una sanción').addUserOption(opt => opt.setName('usuario').setRequired(true)).addStringOption(opt => opt.setName('gravedad').setRequired(true).addChoices({ name: '⚠️ Aviso', value: 'aviso' }, { name: '📝 Falta Leve', value: 'leve' }, { name: '⚠️ Falta Moderada', value: 'moderada' }, { name: '🚨 Falta Grave', value: 'grave' })).addStringOption(opt => opt.setName('razon')),
-    new SlashCommandBuilder().setName('sanciones').setDescription('Ver todas las sanciones del servidor'),
-    new SlashCommandBuilder().setName('sanciones_usuario').setDescription('Ver sanciones de un usuario').addUserOption(opt => opt.setName('usuario').setRequired(true)),
-    new SlashCommandBuilder().setName('eliminarsancion').setDescription('Eliminar una sanción por ID').addIntegerOption(opt => opt.setName('id').setRequired(true)),
-    new SlashCommandBuilder().setName('multa').setDescription('💰 Registra una multa').addUserOption(opt => opt.setName('usuario').setRequired(true)).addIntegerOption(opt => opt.setName('cantidad').setRequired(true)).addStringOption(opt => opt.setName('razon').setRequired(true)),
+    // ==================== COMANDOS ADMIN ====================
+    new SlashCommandBuilder()
+      .setName('borrar-dni-admin')
+      .setDescription('🔧 [ADMIN] Borra el DNI y todos los documentos de un usuario')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario al que borrar DNI').setRequired(true))
+      .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
+        .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
 
-    // Comandos Admin DNI
-    new SlashCommandBuilder().setName('borrar-dni-admin').setDescription('🔧 [ADMIN] Borra el DNI y documentos').addUserOption(opt => opt.setName('usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
-    new SlashCommandBuilder().setName('ver-dni-admin').setDescription('🔧 [ADMIN] Ver DNI').addUserOption(opt => opt.setName('usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
+    new SlashCommandBuilder()
+      .setName('ver-dni-admin')
+      .setDescription('🔧 [ADMIN] Ver DNI de cualquier usuario')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a consultar').setRequired(true))
+      .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
+        .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
 
-    // Comandos Policía
-    new SlashCommandBuilder().setName('buscar-dni').setDescription('🔍 Busca DNI (Policía)').addUserOption(opt => opt.setName('usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
-    new SlashCommandBuilder().setName('ver-dni').setDescription('🔍 Ver DNI público').addUserOption(opt => opt.setName('usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
-    new SlashCommandBuilder().setName('licencia-suspender').setDescription('🚔 [POLICÍA] Suspender licencia').addUserOption(opt => opt.setName('usuario').setRequired(true)).addStringOption(opt => opt.setName('tipo').setRequired(true).addChoices({ name: '🚗 Carnet', value: 'carnet' }, { name: '🔫 Licencia Armas', value: 'licencia' })).addIntegerOption(opt => opt.setName('dias').setRequired(true)),
+    // ==================== NUEVOS COMANDOS ====================
+    new SlashCommandBuilder()
+      .setName('buscar-dni')
+      .setDescription('🔍 Busca el DNI de cualquier usuario (Policía/Staff)')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a buscar').setRequired(true))
+      .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
+        .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
 
-    // NUEVOS COMANDOS
-    new SlashCommandBuilder().setName('prestamo').setDescription('💰 Solicitar préstamo').addIntegerOption(opt => opt.setName('cantidad').setRequired(true)).addStringOption(opt => opt.setName('razon').setRequired(true)),
-    new SlashCommandBuilder().setName('prestamo-aprobar').setDescription('🔧 [ADMIN] Aprobar préstamo').addStringOption(opt => opt.setName('id').setDescription('ID del préstamo').setRequired(true)),
-    new SlashCommandBuilder().setName('prestamo-rechazar').setDescription('🔧 [ADMIN] Rechazar préstamo').addStringOption(opt => opt.setName('id').setDescription('ID del préstamo').setRequired(true)),
+    new SlashCommandBuilder()
+      .setName('multa')
+      .setDescription('💰 Registra una multa + sanción automática')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
+      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad de la multa').setRequired(true))
+      .addStringOption(opt => opt.setName('razon').setDescription('Razón de la multa').setRequired(true)),
 
-    new SlashCommandBuilder().setName('subasta').setDescription('📢 Crear subasta').addStringOption(opt => opt.setName('item').setRequired(true)).addIntegerOption(opt => opt.setName('precio_inicial').setRequired(true)).addIntegerOption(opt => opt.setName('duracion_horas').setRequired(true)),
-    new SlashCommandBuilder().setName('pujar').setDescription('📈 Pujar en una subasta').addStringOption(opt => opt.setName('id').setDescription('ID de la subasta').setRequired(true)).addIntegerOption(opt => opt.setName('cantidad').setRequired(true)),
+    new SlashCommandBuilder()
+      .setName('anuncio-rp')
+      .setDescription('📢 Crea un anuncio RP bonito')
+      .addStringOption(opt => opt.setName('titulo').setDescription('Título del anuncio').setRequired(true))
+      .addStringOption(opt => opt.setName('descripcion').setDescription('Texto del anuncio').setRequired(true))
+      .addStringOption(opt => opt.setName('color').setDescription('Color del embed')
+        .addChoices(
+          { name: '🔴 Rojo', value: '#FF0000' },
+          { name: '🔵 Azul', value: '#00AAFF' },
+          { name: '🟢 Verde', value: '#00FF88' },
+          { name: '🟡 Amarillo', value: '#FFEE00' }
+        )),
 
-    new SlashCommandBuilder().setName('ruleta').setDescription('🎰 Jugar a la ruleta').addIntegerOption(opt => opt.setName('cantidad').setRequired(true)).addStringOption(opt => opt.setName('color').setRequired(true).addChoices({ name: '🔴 Rojo', value: 'rojo' }, { name: '⚫ Negro', value: 'negro' }, { name: '🟢 Verde', value: 'verde' })),
-    new SlashCommandBuilder().setName('loteria').setDescription('🎟️ Comprar boletos de lotería').addIntegerOption(opt => opt.setName('cantidad').setRequired(true))
+    new SlashCommandBuilder()
+      .setName('estado-server')
+      .setDescription('📡 Muestra si el servidor está abierto o cerrado'),
+
+    new SlashCommandBuilder()
+      .setName('arrestar')
+      .setDescription('🚔 Realizar un arresto (solo Policía)'),
+
+    new SlashCommandBuilder()
+      .setName('ver-dni')
+      .setDescription('🔍 Ver DNI de cualquier usuario (público)')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
+      .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
+        .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
+
+    // ==================== ECONOMÍA ====================
+    new SlashCommandBuilder()
+      .setName('balance')
+      .setDescription('💰 Ver tu dinero o el de otro usuario')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario (opcional)')),
+
+    new SlashCommandBuilder()
+      .setName('addmoney')
+      .setDescription('🔧 [ADMIN] Añadir o quitar dinero')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
+      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (positiva = añadir, negativa = quitar)').setRequired(true)),
+
+    new SlashCommandBuilder()
+      .setName('sueldo')
+      .setDescription('💼 Cobrar sueldo (cada 24 horas)'),
+
+    new SlashCommandBuilder()
+      .setName('transferir')
+      .setDescription('💸 Transferir dinero a otro usuario')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Destinatario').setRequired(true))
+      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad a transferir').setRequired(true)),
+
+    new SlashCommandBuilder()
+      .setName('apostar')
+      .setDescription('🎲 Apostar en cara o cruz (50/50)')
+      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad a apostar (mín. 100)').setRequired(true))
+      .addStringOption(opt => opt.setName('opcion')
+        .setDescription('Cara o Cruz')
+        .setRequired(true)
+        .addChoices(
+          { name: '🪙 Cara', value: 'cara' },
+          { name: '🪙 Cruz', value: 'cruz' }
+        )),
+
+    new SlashCommandBuilder()
+      .setName('leaderboard')
+      .setDescription('🏆 Top 10 más ricos del servidor')
   ];
 
   for (const guild of client.guilds.cache.values()) {
@@ -199,29 +346,32 @@ client.on(Events.InteractionCreate, async interaction => {
   try {
     if (interaction.isChatInputCommand()) {
       switch (interaction.commandName) {
-        case 'ping': await interaction.reply({ content: `🏓 Pong! Latencia: **${client.ws.ping}ms**`, flags: MessageFlags.Ephemeral }); break;
+        case 'ping': 
+          await interaction.reply({ content: `🏓 Pong! Latencia: **${client.ws.ping}ms**`, flags: MessageFlags.Ephemeral }); 
+          break;
         case 'votacion': await handleVotacion(interaction); break;
         case 'abrirserver': await handleAbrirServer(interaction); break;
         case 'cerrarserver': await handleCerrarServer(interaction); break;
         case 'cancelarvotacion': await handleCancelarVotacion(interaction); break;
-        case 'panel-dni': await handlePanelDni(interaction); break;
         case 'sancionar': await handleSancionar(interaction); break;
         case 'sanciones': await handleVerSanciones(interaction); break;
         case 'sanciones_usuario': await handleVerSancionesUsuario(interaction); break;
         case 'eliminarsancion': await handleEliminarSancion(interaction); break;
-        case 'multa': await handleMulta(interaction); break;
+        case 'panel-dni': await handlePanelDni(interaction); break;
         case 'borrar-dni-admin': await handleBorrarDniAdmin(interaction); break;
         case 'ver-dni-admin': await handleVerDniAdmin(interaction); break;
         case 'buscar-dni': await handleBuscarDni(interaction); break;
+        case 'multa': await handleMulta(interaction); break;
+        case 'anuncio-rp': await handleAnuncioRp(interaction); break;
+        case 'estado-server': await handleEstadoServer(interaction); break;
+        case 'arrestar': await handleArrestar(interaction); break;
         case 'ver-dni': await handleVerDniPublico(interaction); break;
-        case 'licencia-suspender': await handleSuspenderLicencia(interaction); break;
-        case 'prestamo': await handlePrestamo(interaction); break;
-        case 'prestamo-aprobar': await handleAprobarPrestamo(interaction); break;
-        case 'prestamo-rechazar': await handleRechazarPrestamo(interaction); break;
-        case 'subasta': await handleCrearSubasta(interaction); break;
-        case 'pujar': await handlePujarSubasta(interaction); break;
-        case 'ruleta': await handleRuleta(interaction); break;
-        case 'loteria': await handleLoteria(interaction); break;
+        case 'balance': await handleBalance(interaction); break;
+        case 'addmoney': await handleAddMoney(interaction); break;
+        case 'sueldo': await handleSueldo(interaction); break;
+        case 'transferir': await handleTransferir(interaction); break;
+        case 'apostar': await handleApostar(interaction); break;
+        case 'leaderboard': await handleLeaderboard(interaction); break;
       }
       return;
     }
@@ -251,7 +401,7 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 
 // ======================
-// COMANDOS ADMIN Y POLICÍA
+// COMANDOS ADMIN
 // ======================
 async function handleBorrarDniAdmin(interaction) {
   if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -306,437 +456,161 @@ async function handleVerDniAdmin(interaction) {
   await interaction.reply({ embeds: [embed] });
 }
 
-async function handleBuscarDni(interaction) {
-  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) {
-    return interaction.reply({ content: '❌ Solo Policía y Staff pueden usar este comando.', flags: MessageFlags.Ephemeral });
-  }
-
-  const target = interaction.options.getMember('usuario');
-  const pj = interaction.options.getString('pj');
-
-  const userData = getUserData(interaction.guild.id, target.id);
-  const dni = userData.pjs[pj].dni;
-
-  if (!dni) {
-    return interaction.reply({ content: `❌ **${target}** no tiene DNI registrado en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-  }
-
-  const embed = new EmbedBuilder()
-    .setTitle(`🔍 DNI ENCONTRADO - PJ${pj}`)
-    .setColor(0x00AAFF)
-    .setThumbnail(target.user.displayAvatarURL())
-    .addFields(
-      { name: '👤 Usuario', value: `${target} (\`${target.id}\`)`, inline: false },
-      { name: '🪪 DNI', value: dni.numero, inline: true },
-      { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
-      { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
-      { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
-      { name: 'Género', value: dni.genero, inline: true },
-      { name: 'Creado', value: dni.fechaCreacion, inline: true }
-    );
-
-  await interaction.reply({ embeds: [embed] });
-}
-
-async function handleVerDniPublico(interaction) {
-  const target = interaction.options.getMember('usuario');
-  const pj = interaction.options.getString('pj');
-
-  const userData = getUserData(interaction.guild.id, target.id);
-  const dni = userData.pjs[pj].dni;
-
-  if (!dni) {
-    return interaction.reply({ content: `❌ **${target}** no tiene DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-  }
-
-  const embed = new EmbedBuilder()
-    .setTitle(`🔍 DNI DE ${target.user.tag} - PJ${pj}`)
-    .setColor(0x00AAFF)
-    .setThumbnail(target.user.displayAvatarURL())
-    .addFields(
-      { name: '🪪 DNI', value: dni.numero, inline: true },
-      { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
-      { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
-      { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
-      { name: 'Género', value: dni.genero, inline: true },
-      { name: 'Creado', value: dni.fechaCreacion, inline: true }
-    );
-
-  await interaction.reply({ embeds: [embed] });
-}
-
 // ======================
-// PRESTAMO - SOLICITUD, APROBAR Y RECHAZAR
+// SANCIONES
 // ======================
-const prestamosPendientes = new Map(); // id -> datos del préstamo
-
-async function handlePrestamo(interaction) {
-  const cantidad = interaction.options.getInteger('cantidad');
-  const razon = interaction.options.getString('razon');
-
-  if (cantidad < 500 || cantidad > 15000) {
-    return interaction.reply({ content: '❌ La cantidad debe estar entre $500 y $15.000.', flags: MessageFlags.Ephemeral });
+async function handleSancionar(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return interaction.reply({ content: '❌ No tienes permisos suficientes.', flags: MessageFlags.Ephemeral });
   }
 
-  const prestamoId = Date.now().toString();
+  const miembro = interaction.options.getMember('usuario');
+  const gravedad = interaction.options.getString('gravedad');
+  let razon = interaction.options.getString('razon') || 'Sin razón especificada';
 
-  const embed = new EmbedBuilder()
-    .setTitle('💰 NUEVA SOLICITUD DE PRÉSTAMO')
-    .setColor(0x00AAFF)
-    .addFields(
-      { name: 'Solicitante', value: interaction.user.toString(), inline: false },
-      { name: 'Cantidad', value: `**$${cantidad.toLocaleString('es-ES')}**`, inline: true },
-      { name: 'Razón', value: razon, inline: false },
-      { name: 'ID del préstamo', value: `\`${prestamoId}\``, inline: false }
-    )
-    .setFooter({ text: 'Usa /prestamo-aprobar o /prestamo-rechazar' })
-    .setTimestamp();
+  const mapaGravedad = {
+    'aviso': '⚠️ Aviso',
+    'leve': '📝 Falta Leve',
+    'moderada': '⚠️ Falta Moderada',
+    'grave': '🚨 Falta Grave'
+  };
 
-  await interaction.reply({ embeds: [embed], content: '@everyone' });
+  const tipo = mapaGravedad[gravedad];
+  const guildId = interaction.guild.id;
 
-  prestamosPendientes.set(prestamoId, {
-    id: prestamoId,
-    userId: interaction.user.id,
-    username: interaction.user.tag,
-    cantidad: cantidad,
+  if (!sanciones[guildId]) sanciones[guildId] = [];
+
+  const sanctionId = sanciones[guildId].length + 1;
+
+  const registro = {
+    id: sanctionId,
+    user_id: miembro.id,
+    user_name: miembro.user.tag,
+    mod_id: interaction.user.id,
+    mod_name: interaction.user.tag,
+    tipo: tipo,
     razon: razon,
-    channel: interaction.channel
-  });
-}
+    timestamp: new Date().toISOString()
+  };
 
-async function handleAprobarPrestamo(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo los administradores pueden aprobar préstamos.', flags: MessageFlags.Ephemeral });
-  }
+  sanciones[guildId].push(registro);
+  guardarSanciones();
 
-  const prestamoId = interaction.options.getString('id');
-  const prestamo = prestamosPendientes.get(prestamoId);
-
-  if (!prestamo) {
-    return interaction.reply({ content: '❌ No se encontró ese préstamo o ya fue procesado.', flags: MessageFlags.Ephemeral });
-  }
-
-  const userData = getUserData(interaction.guild.id, prestamo.userId);
-  userData.dinero += prestamo.cantidad;
-  guardarIdentidades();
-
-  const embedAprobado = new EmbedBuilder()
-    .setTitle('✅ PRÉSTAMO APROBADO')
-    .setColor(0x00FF00)
-    .addFields(
-      { name: 'Usuario', value: `<@${prestamo.userId}>`, inline: false },
-      { name: 'Cantidad', value: `**$${prestamo.cantidad.toLocaleString('es-ES')}**`, inline: true }
-    );
-
-  await prestamo.channel.send({ embeds: [embedAprobado] });
-  await interaction.reply({ content: `✅ Préstamo ID \`${prestamoId}\` aprobado y dinero entregado.`, flags: MessageFlags.Ephemeral });
-
-  prestamosPendientes.delete(prestamoId);
-}
-
-async function handleRechazarPrestamo(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo los administradores pueden rechazar préstamos.', flags: MessageFlags.Ephemeral });
-  }
-
-  const prestamoId = interaction.options.getString('id');
-  const prestamo = prestamosPendientes.get(prestamoId);
-
-  if (!prestamo) {
-    return interaction.reply({ content: '❌ No se encontró ese préstamo o ya fue procesado.', flags: MessageFlags.Ephemeral });
-  }
-
-  const embedRechazado = new EmbedBuilder()
-    .setTitle('❌ PRÉSTAMO RECHAZADO')
+  const embedPublico = new EmbedBuilder()
+    .setTitle('📋 Sanción Registrada')
     .setColor(0xFF0000)
+    .setTimestamp()
     .addFields(
-      { name: 'Usuario', value: `<@${prestamo.userId}>`, inline: false },
-      { name: 'Cantidad solicitada', value: `**$${prestamo.cantidad.toLocaleString('es-ES')}**`, inline: true }
-    );
-
-  await prestamo.channel.send({ embeds: [embedRechazado] });
-  await interaction.reply({ content: `❌ Préstamo ID \`${prestamoId}\` rechazado.`, flags: MessageFlags.Ephemeral });
-
-  prestamosPendientes.delete(prestamoId);
-}
-
-// ======================
-// SUBASTA
-// ======================
-const subastas = new Map();
-
-async function handleCrearSubasta(interaction) {
-  const item = interaction.options.getString('item');
-  const precioInicial = interaction.options.getInteger('precio_inicial');
-  const duracionHoras = interaction.options.getInteger('duracion_horas');
-
-  if (duracionHoras < 1 || duracionHoras > 72) {
-    return interaction.reply({ content: '❌ La duración debe estar entre 1 y 72 horas.', flags: MessageFlags.Ephemeral });
-  }
-
-  const subastaId = Date.now().toString();
-  const fin = Date.now() + duracionHoras * 3600000;
-
-  const embed = new EmbedBuilder()
-    .setTitle('📢 NUEVA SUBASTA')
-    .setColor(0xFFD700)
-    .addFields(
-      { name: 'Artículo', value: item, inline: false },
-      { name: 'Precio inicial', value: `**$${precioInicial.toLocaleString('es-ES')}**`, inline: true },
-      { name: 'Finaliza en', value: `<t:${Math.floor(fin / 1000)}:R>`, inline: true },
-      { name: 'ID de subasta', value: `\`${subastaId}\``, inline: false }
-    );
-
-  const mensaje = await interaction.channel.send({ embeds: [embed] });
-
-  subastas.set(subastaId, {
-    id: subastaId,
-    item: item,
-    precioActual: precioInicial,
-    mejorPostorId: null,
-    mejorPostorTag: null,
-    fin: fin,
-    mensaje: mensaje,
-    channel: interaction.channel
-  });
-
-  await interaction.reply({ content: `✅ Subasta creada correctamente.\n**ID:** \`${subastaId}\`\nUsa \`/pujar <id> <cantidad>\` para pujar.`, flags: MessageFlags.Ephemeral });
-
-  setTimeout(() => finalizarSubasta(subastaId), duracionHoras * 3600000);
-}
-
-async function handlePujarSubasta(interaction) {
-  const subastaId = interaction.options.getString('id');
-  const cantidad = interaction.options.getInteger('cantidad');
-
-  const subasta = subastas.get(subastaId);
-  if (!subasta) {
-    return interaction.reply({ content: '❌ Esta subasta no existe o ya finalizó.', flags: MessageFlags.Ephemeral });
-  }
-
-  if (cantidad <= subasta.precioActual) {
-    return interaction.reply({ content: `❌ La puja debe ser mayor que el precio actual ($${subasta.precioActual.toLocaleString('es-ES')}).`, flags: MessageFlags.Ephemeral });
-  }
-
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-  if (userData.dinero < cantidad) {
-    return interaction.reply({ content: '❌ No tienes suficiente dinero para pujar esa cantidad.', flags: MessageFlags.Ephemeral });
-  }
-
-  subasta.precioActual = cantidad;
-  subasta.mejorPostorId = interaction.user.id;
-  subasta.mejorPostorTag = interaction.user.tag;
-
-  const nuevoEmbed = EmbedBuilder.from(subasta.mensaje.embeds[0])
-    .setFields(
-      { name: 'Artículo', value: subasta.item, inline: false },
-      { name: 'Precio actual', value: `**$${subasta.precioActual.toLocaleString('es-ES')}**`, inline: true },
-      { name: 'Mejor postor', value: subasta.mejorPostorTag, inline: true },
-      { name: 'Finaliza en', value: `<t:${Math.floor(subasta.fin / 1000)}:R>`, inline: true },
-      { name: 'ID de subasta', value: `\`${subastaId}\``, inline: false }
-    );
-
-  await subasta.mensaje.edit({ embeds: [nuevoEmbed] });
-  await interaction.reply({ content: `✅ Pujaste **$${cantidad.toLocaleString('es-ES')}** en la subasta **${subastaId}**.`, flags: MessageFlags.Ephemeral });
-}
-
-async function finalizarSubasta(subastaId) {
-  const subasta = subastas.get(subastaId);
-  if (!subasta) return;
-
-  if (subasta.mejorPostorId) {
-    const userData = getUserData(subasta.channel.guild.id, subasta.mejorPostorId);
-    userData.dinero -= subasta.precioActual;
-    guardarIdentidades();
-
-    const embedFin = new EmbedBuilder()
-      .setTitle('🏆 SUBASTA FINALIZADA')
-      .setColor(0x00FF00)
-      .addFields(
-        { name: 'Artículo', value: subasta.item, inline: false },
-        { name: 'Ganador', value: subasta.mejorPostorTag, inline: true },
-        { name: 'Precio final', value: `**$${subasta.precioActual.toLocaleString('es-ES')}**`, inline: true }
-      );
-
-    await subasta.mensaje.edit({ embeds: [embedFin] });
-  } else {
-    const embedFin = new EmbedBuilder()
-      .setTitle('⏰ SUBASTA FINALIZADA')
-      .setColor(0xFF0000)
-      .setDescription('Nadie pujó por el artículo.');
-    await subasta.mensaje.edit({ embeds: [embedFin] });
-  }
-
-  subastas.delete(subastaId);
-}
-
-// ======================
-// SUSPENDER LICENCIA (SOLO POLICÍA)
-// ======================
-async function handleSuspenderLicencia(interaction) {
-  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) {
-    return interaction.reply({ content: '❌ Solo Policía puede suspender licencias.', flags: MessageFlags.Ephemeral });
-  }
-
-  const target = interaction.options.getMember('usuario');
-  const tipo = interaction.options.getString('tipo');
-  const dias = interaction.options.getInteger('dias');
-
-  const userData = getUserData(interaction.guild.id, target.id);
-  const pj = '1'; // Puedes ampliarlo después para elegir PJ
-
-  if (tipo === 'carnet') {
-    if (!userData.pjs[pj].carnetConducir) {
-      return interaction.reply({ content: `❌ ${target} no tiene carnet de conducir activo.`, flags: MessageFlags.Ephemeral });
-    }
-    userData.pjs[pj].carnetConducir.suspendidoHasta = Date.now() + (dias * 86400000);
-  } else {
-    if (!userData.pjs[pj].licenciaArmas) {
-      return interaction.reply({ content: `❌ ${target} no tiene licencia de armas activa.`, flags: MessageFlags.Ephemeral });
-    }
-    userData.pjs[pj].licenciaArmas.suspendidoHasta = Date.now() + (dias * 86400000);
-  }
-
-  guardarIdentidades();
-
-  const embed = new EmbedBuilder()
-    .setTitle('🚫 Licencia Suspendida')
-    .setColor(0xFF0000)
-    .addFields(
-      { name: 'Usuario', value: `${target}`, inline: false },
-      { name: 'Tipo', value: tipo === 'carnet' ? '🚗 Carnet de Conducir' : '🔫 Licencia de Armas', inline: true },
-      { name: 'Duración', value: `${dias} días`, inline: true }
+      { name: 'Usuario', value: `${miembro} (\`${miembro.id}\`)`, inline: false },
+      { name: 'Tipo', value: tipo, inline: true },
+      { name: 'Moderador', value: interaction.user.toString(), inline: true },
+      { name: 'Razón', value: razon, inline: false }
     )
-    .setTimestamp();
+    .setFooter({ text: `Sanción ID: ${sanctionId}` });
+
+  await interaction.reply({ embeds: [embedPublico] });
+
+  const embedDM = new EmbedBuilder()
+    .setTitle('📋 Has recibido una sanción')
+    .setDescription('Esta sanción ha quedado registrada en el servidor.')
+    .setColor(0xFF0000)
+    .setTimestamp()
+    .addFields(
+      { name: 'Tipo', value: tipo },
+      { name: 'Razón', value: razon },
+      { name: 'Moderador', value: interaction.user.tag }
+    )
+    .setFooter({ text: `Servidor: ${interaction.guild.name} | ID: ${sanctionId}` });
+
+  try {
+    await miembro.send({ embeds: [embedDM] });
+  } catch (err) {
+    await interaction.followUp({ content: '⚠️ No se pudo enviar DM al usuario.', flags: MessageFlags.Ephemeral });
+  }
+}
+
+async function handleVerSanciones(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return interaction.reply({ content: '❌ No tienes permisos suficientes.', flags: MessageFlags.Ephemeral });
+  }
+  const guildId = interaction.guild.id;
+  const lista = sanciones[guildId] || [];
+  if (lista.length === 0) {
+    return interaction.reply({ content: '📭 No hay sanciones registradas.', flags: MessageFlags.Ephemeral });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(`📋 Todas las sanciones del servidor (${lista.length})`)
+    .setColor(0xFFA500);
+
+  const ultimas = lista.slice(-15).reverse();
+  ultimas.forEach(s => {
+    embed.addFields({
+      name: `ID: ${s.id} | ${s.user_name} • ${s.tipo}`,
+      value: `**Razón:** ${s.razon}\n**Moderador:** ${s.mod_name}\n**Fecha:** <t:${Math.floor(new Date(s.timestamp).getTime() / 1000)}:R>`,
+      inline: false
+    });
+  });
+
+  if (lista.length > 15) embed.setFooter({ text: `Mostrando las últimas 15` });
 
   await interaction.reply({ embeds: [embed] });
 }
 
-// ======================
-// RULETA
-// ======================
-async function handleRuleta(interaction) {
-  const cantidad = interaction.options.getInteger('cantidad');
-  const color = interaction.options.getString('color');
-
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-
-  if (cantidad < 100) {
-    return interaction.reply({ content: '❌ La apuesta mínima es $100.', flags: MessageFlags.Ephemeral });
+async function handleVerSancionesUsuario(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return interaction.reply({ content: '❌ No tienes permisos suficientes.', flags: MessageFlags.Ephemeral });
   }
-  if (userData.dinero < cantidad) {
-    return interaction.reply({ content: '❌ No tienes suficiente dinero.', flags: MessageFlags.Ephemeral });
+  const miembro = interaction.options.getMember('usuario');
+  const guildId = interaction.guild.id;
+  const lista = sanciones[guildId] || [];
+  const usuarioSanciones = lista.filter(s => s.user_id === miembro.id);
+
+  if (usuarioSanciones.length === 0) {
+    return interaction.reply({ content: `📭 **${miembro}** no tiene sanciones.`, flags: MessageFlags.Ephemeral });
   }
 
-  await interaction.deferReply();
+  const embed = new EmbedBuilder()
+    .setTitle(`📋 Sanciones de ${miembro.user.tag} (${usuarioSanciones.length})`)
+    .setColor(0xFF0000)
+    .setThumbnail(miembro.user.displayAvatarURL());
 
-  const resultado = Math.random();
-  let ganado = false;
-  let multiplicador = 0;
-  let resultadoTexto = '';
-
-  if (color === 'verde' && resultado < 0.05) {
-    ganado = true;
-    multiplicador = 14;
-    resultadoTexto = '🟢 VERDE';
-  } else if (color === 'rojo' && resultado < 0.525) {
-    ganado = true;
-    multiplicador = 2;
-    resultadoTexto = '🔴 ROJO';
-  } else if (color === 'negro' && resultado >= 0.525 && resultado < 0.975) {
-    ganado = true;
-    multiplicador = 2;
-    resultadoTexto = '⚫ NEGRO';
-  } else {
-    resultadoTexto = color === 'rojo' ? '⚫ NEGRO' : color === 'negro' ? '🔴 ROJO' : '🔴 ROJO / ⚫ NEGRO';
-  }
-
-  if (ganado) {
-    const ganancia = cantidad * multiplicador;
-    userData.dinero += ganancia - cantidad;
-    guardarIdentidades();
-
-    const embed = new EmbedBuilder()
-      .setTitle('🎰 ¡GANASTE!')
-      .setColor(0x00FF00)
-      .setDescription(`Salió **${resultadoTexto}**`)
-      .addFields(
-        { name: 'Apostaste', value: `$${cantidad}`, inline: true },
-        { name: 'Ganancia', value: `**+$${(ganancia - cantidad).toLocaleString('es-ES')}**`, inline: true }
-      );
-
-    await interaction.editReply({ embeds: [embed] });
-  } else {
-    userData.dinero -= cantidad;
-    guardarIdentidades();
-
-    const embed = new EmbedBuilder()
-      .setTitle('🎰 Perdiste')
-      .setColor(0xFF0000)
-      .setDescription(`Salió **${resultadoTexto}**`)
-      .addFields({ name: 'Perdiste', value: `**-$${cantidad}**` });
-
-    await interaction.editReply({ embeds: [embed] });
-  }
-}
-
-// ======================
-// LOTERIA
-// ======================
-let lotteryPool = 0;
-let lotteryTickets = [];
-
-async function handleLoteria(interaction) {
-  const cantidad = interaction.options.getInteger('cantidad');
-  const precioBoleto = 500;
-
-  if (cantidad < 1) return interaction.reply({ content: '❌ Mínimo 1 boleto.', flags: MessageFlags.Ephemeral });
-
-  const total = cantidad * precioBoleto;
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-
-  if (userData.dinero < total) {
-    return interaction.reply({ content: `❌ No tienes suficiente dinero (necesitas $${total}).`, flags: MessageFlags.Ephemeral });
-  }
-
-  userData.dinero -= total;
-  guardarIdentidades();
-
-  lotteryPool += total;
-
-  for (let i = 0; i < cantidad; i++) {
-    lotteryTickets.push({
-      userId: interaction.user.id,
-      username: interaction.user.tag
+  usuarioSanciones.reverse().forEach(s => {
+    embed.addFields({
+      name: `ID: ${s.id} • ${s.tipo}`,
+      value: `**Razón:** ${s.razon}\n**Moderador:** ${s.mod_name}\n**Fecha:** <t:${Math.floor(new Date(s.timestamp).getTime() / 1000)}:R>`,
+      inline: false
     });
-  }
+  });
 
-  await interaction.reply({ content: `🎟️ Compraste **${cantidad}** boletos por **$${total}**.\nPozo actual: **$${lotteryPool.toLocaleString('es-ES')}**` });
+  await interaction.reply({ embeds: [embed] });
 }
 
-// Sorteo automático cada 24 horas
-setInterval(() => {
-  if (lotteryTickets.length === 0) return;
+async function handleEliminarSancion(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return interaction.reply({ content: '❌ No tienes permisos suficientes.', flags: MessageFlags.Ephemeral });
+  }
 
-  const ganadorIndex = Math.floor(Math.random() * lotteryTickets.length);
-  const ganador = lotteryTickets[ganadorIndex];
+  const sanctionId = interaction.options.getInteger('id');
+  const guildId = interaction.guild.id;
+  const lista = sanciones[guildId] || [];
+  const indice = lista.findIndex(s => s.id === sanctionId);
 
-  const premio = Math.floor(lotteryPool * 0.85);
+  if (indice === -1) {
+    return interaction.reply({ content: `❌ No existe la sanción con ID \`${sanctionId}\`.`, flags: MessageFlags.Ephemeral });
+  }
 
-  const userData = getUserData('guild-id-placeholder', ganador.userId); // se usa el guild actual en uso
-  userData.dinero += premio;
-  guardarIdentidades();
+  const usuario = lista[indice].user_name;
+  lista.splice(indice, 1);
+  sanciones[guildId] = lista;
+  guardarSanciones();
 
-  console.log(`🎉 LOTERÍA - Ganador: ${ganador.username} | Premio: $${premio}`);
-
-  lotteryPool = 0;
-  lotteryTickets = [];
-}, 86400000); // 24 horas
+  await interaction.reply(`✅ **Sanción ID ${sanctionId}** de **${usuario}** eliminada.`);
+}
 
 // ======================
-// VOTACIONES COMPLETAS
+// VOTACIONES (versión corregida)
 // ======================
-
 async function handleVotacion(interaction) {
   await interaction.deferReply();
 
@@ -744,7 +618,7 @@ async function handleVotacion(interaction) {
     .setTitle('VOTACIÓN DE APERTURA DE SERVIDOR')
     .setDescription('**¿Te unirás a la apertura del servidor?**\nVota con los botones de abajo.\n\n⏰ La votación dura **30 minutos**.\nAl llegar a **5 votos "Me uniré"** se abrirá automáticamente.')
     .setColor(0x5865F2)
-    .addFields(
+    .setFields(
       { name: '✅ Me uniré', value: '0', inline: true },
       { name: '⏰ Me uniré más tarde', value: '0', inline: true },
       { name: '❌ No me uniré', value: '0', inline: true },
@@ -785,8 +659,15 @@ async function handleVotacion(interaction) {
 
 async function handleButtonVote(interaction) {
   const pollData = votes.get(interaction.message.id);
+
   if (!pollData) {
-    return interaction.reply({ content: '❌ Esta votación ya expiró o fue cancelada.', flags: MessageFlags.Ephemeral });
+    const disabledRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('vote_yes').setLabel('Me uniré').setStyle(ButtonStyle.Success).setEmoji('✅').setDisabled(true),
+      new ButtonBuilder().setCustomId('vote_later').setLabel('Me uniré más tarde').setStyle(ButtonStyle.Primary).setEmoji('⏰').setDisabled(true),
+      new ButtonBuilder().setCustomId('vote_no').setLabel('No me uniré').setStyle(ButtonStyle.Danger).setEmoji('❌').setDisabled(true)
+    );
+    try { await interaction.update({ components: [disabledRow] }); } catch (e) {}
+    return interaction.followUp({ content: '❌ Esta votación ya expiró o fue cancelada.', flags: MessageFlags.Ephemeral });
   }
 
   const customId = interaction.customId;
@@ -895,6 +776,7 @@ async function handleAbrirServer(interaction) {
 
   let mencionesSi = '';
   let mencionesTarde = '';
+
   if (pollData) {
     pollData.voters.forEach((opcion, userId) => {
       if (opcion === 'yes') mencionesSi += `<@${userId}> `;
@@ -925,6 +807,7 @@ async function handleAbrirServer(interaction) {
 async function abrirServidorAutomatico(channel, pollData) {
   let mencionesSi = '';
   let mencionesTarde = '';
+
   pollData.voters.forEach((opcion, userId) => {
     if (opcion === 'yes') mencionesSi += `<@${userId}> `;
     else if (opcion === 'later') mencionesTarde += `<@${userId}> `;
@@ -950,6 +833,7 @@ async function abrirServidorAutomatico(channel, pollData) {
 
 async function handleCerrarServer(interaction) {
   await interaction.deferReply();
+
   serverAbierto = false;
 
   const embed = new EmbedBuilder()
@@ -984,46 +868,6 @@ async function cerrarVotacionPorTiempo(messageId) {
 
   if (pollData.timeout) clearTimeout(pollData.timeout);
   votes.delete(messageId);
-}
-// ======================
-// PANEL DNI
-// ======================
-async function handlePanelDni(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo los administradores pueden crear el panel de DNI.', flags: MessageFlags.Ephemeral });
-  }
-
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-  const embed = new EmbedBuilder()
-    .setTitle('🪪 SISTEMA OFICIAL DE DNI - ALBACETE RP')
-    .setDescription('**Cada jugador puede tener hasta 2 personajes (PJ1 y PJ2).**\n\n' +
-      '• Crea tu DNI con tus datos reales del personaje.\n' +
-      '• Con el DNI podrás sacar **Carnet de Conducir** y **Licencia de Armas**.\n' +
-      '• Solo tú puedes gestionar tus documentos.\n' +
-      '• Los administradores pueden borrar documentos si es necesario.\n\n' +
-      'Usa los botones de abajo:')
-    .setColor(0x00FFAA)
-    .setTimestamp();
-
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('dni-crear').setLabel('Crear DNI').setStyle(ButtonStyle.Primary).setEmoji('🪪'),
-    new ButtonBuilder().setCustomId('dni-ver').setLabel('Ver DNI').setStyle(ButtonStyle.Secondary).setEmoji('🔎'),
-    new ButtonBuilder().setCustomId('dni-borrar').setLabel('Borrar DNI').setStyle(ButtonStyle.Danger).setEmoji('🗑️')
-  );
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('carnet-crear').setLabel('Crear Carnet Conducir').setStyle(ButtonStyle.Primary).setEmoji('🚗'),
-    new ButtonBuilder().setCustomId('carnet-ver').setLabel('Ver Carnet').setStyle(ButtonStyle.Secondary).setEmoji('🔎'),
-    new ButtonBuilder().setCustomId('carnet-borrar').setLabel('Borrar Carnet').setStyle(ButtonStyle.Danger).setEmoji('🗑️')
-  );
-  const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('licencia-crear').setLabel('Crear Licencia Armas').setStyle(ButtonStyle.Primary).setEmoji('🔫'),
-    new ButtonBuilder().setCustomId('licencia-ver').setLabel('Ver Licencia').setStyle(ButtonStyle.Secondary).setEmoji('🔎'),
-    new ButtonBuilder().setCustomId('licencia-borrar').setLabel('Borrar Licencia').setStyle(ButtonStyle.Danger).setEmoji('🗑️')
-  );
-
-  await interaction.channel.send({ embeds: [embed], components: [row1, row2, row3] });
-  await interaction.editReply({ content: '✅ Panel de DNI creado correctamente.' });
 }
 
 // ======================
@@ -1122,8 +966,8 @@ async function handleDniButton(interaction) {
   }
 }
 
-/// ======================
-// MODALES DEL SISTEMA DNI
+// ======================
+// MODALES DEL SISTEMA DNI + ARRESTO
 // ======================
 async function handleModalSubmit(interaction) {
   try {
@@ -1371,61 +1215,8 @@ async function handleModalSubmit(interaction) {
 }
 
 // ======================
-// COMANDOS ADMIN DNI + POLICÍA
+// COMANDOS POLICÍA Y STAFF
 // ======================
-async function handleBorrarDniAdmin(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo los administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
-  }
-
-  const target = interaction.options.getMember('usuario');
-  const pj = interaction.options.getString('pj');
-
-  const userData = getUserData(interaction.guild.id, target.id);
-
-  if (!userData.pjs[pj].dni) {
-    return interaction.reply({ content: `❌ **${target}** no tiene DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-  }
-
-  userData.pjs[pj].dni = null;
-  userData.pjs[pj].carnetConducir = null;
-  userData.pjs[pj].licenciaArmas = null;
-  guardarIdentidades();
-
-  await interaction.reply(`✅ **DNI y todos los documentos del PJ${pj} de ${target} han sido eliminados.**`);
-}
-
-async function handleVerDniAdmin(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo los administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
-  }
-
-  const target = interaction.options.getMember('usuario');
-  const pj = interaction.options.getString('pj');
-
-  const userData = getUserData(interaction.guild.id, target.id);
-  const dni = userData.pjs[pj].dni;
-
-  if (!dni) {
-    return interaction.reply({ content: `❌ **${target}** no tiene DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-  }
-
-  const embed = new EmbedBuilder()
-    .setTitle(`🔎 DNI de ${target.user.tag} - PJ${pj}`)
-    .setColor(0x00AAFF)
-    .addFields(
-      { name: 'DNI', value: dni.numero, inline: true },
-      { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
-      { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
-      { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
-      { name: 'Género', value: dni.genero, inline: true },
-      { name: 'Creado', value: dni.fechaCreacion, inline: true }
-    )
-    .setThumbnail(target.user.displayAvatarURL());
-
-  await interaction.reply({ embeds: [embed] });
-}
-
 async function handleBuscarDni(interaction) {
   if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) {
     return interaction.reply({ content: '❌ Solo Policía y Staff pueden usar este comando.', flags: MessageFlags.Ephemeral });
@@ -1458,6 +1249,79 @@ async function handleBuscarDni(interaction) {
   await interaction.reply({ embeds: [embed] });
 }
 
+async function handleMulta(interaction) {
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) {
+    return interaction.reply({ content: '❌ Solo Policía puede multar.', flags: MessageFlags.Ephemeral });
+  }
+
+  const miembro = interaction.options.getMember('usuario');
+  const cantidad = interaction.options.getInteger('cantidad');
+  const razon = interaction.options.getString('razon');
+
+  const guildId = interaction.guild.id;
+  if (!sanciones[guildId]) sanciones[guildId] = [];
+
+  const sanctionId = sanciones[guildId].length + 1;
+
+  const registro = {
+    id: sanctionId,
+    user_id: miembro.id,
+    user_name: miembro.user.tag,
+    mod_id: interaction.user.id,
+    mod_name: interaction.user.tag,
+    tipo: '💰 Multa',
+    razon: `${razon} | Cantidad: $${cantidad.toLocaleString('es-ES')}`,
+    cantidad: cantidad,
+    timestamp: new Date().toISOString()
+  };
+
+  sanciones[guildId].push(registro);
+  guardarSanciones();
+
+  const userData = getUserData(guildId, miembro.id);
+  userData.dinero -= cantidad;
+  if (userData.dinero < 0) userData.dinero = 0;
+  guardarIdentidades();
+
+  const embed = new EmbedBuilder()
+    .setTitle('💰 MULTA REGISTRADA')
+    .setColor(0xFFAA00)
+    .setTimestamp()
+    .addFields(
+      { name: 'Usuario', value: `${miembro}`, inline: false },
+      { name: 'Cantidad', value: `**$${cantidad.toLocaleString('es-ES')}**`, inline: true },
+      { name: 'Nuevo balance', value: `**$${userData.dinero.toLocaleString('es-ES')}**`, inline: true },
+      { name: 'Moderador', value: interaction.user.toString(), inline: true },
+      { name: 'Razón', value: razon, inline: false }
+    )
+    .setFooter({ text: `Multa ID: ${sanctionId}` });
+
+  await interaction.reply({ embeds: [embed] });
+
+  try {
+    await miembro.send({ embeds: [embed] });
+  } catch {}
+}
+
+async function handleArrestar(interaction) {
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) {
+    return interaction.reply({ content: '❌ Solo Policía puede arrestar.', flags: MessageFlags.Ephemeral });
+  }
+
+  const modal = new ModalBuilder()
+    .setCustomId('modal-arrestar')
+    .setTitle('🚔 Formulario de Arresto');
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nombre_ic').setLabel('Nombre IC (arrestado)').setStyle(TextInputStyle.Short).setRequired(true)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('articulos').setLabel('Artículos').setStyle(TextInputStyle.Paragraph).setRequired(true)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('policias').setLabel('Policías que realizaron el arresto').setStyle(TextInputStyle.Short).setRequired(true)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('tiempo').setLabel('Tiempo en cárcel (ej: 30 minutos)').setStyle(TextInputStyle.Short).setRequired(true))
+  );
+
+  await interaction.showModal(modal);
+}
+
 async function handleVerDniPublico(interaction) {
   const target = interaction.options.getMember('usuario');
   const pj = interaction.options.getString('pj');
@@ -1486,75 +1350,7 @@ async function handleVerDniPublico(interaction) {
 }
 
 // ======================
-// MULTA Y ARRESTO
-// ======================
-async function handleMulta(interaction) {
-  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) {
-    return interaction.reply({ content: '❌ Solo Policía puede multar.', flags: MessageFlags.Ephemeral });
-  }
-
-  const miembro = interaction.options.getMember('usuario');
-  const cantidad = interaction.options.getInteger('cantidad');
-  const razon = interaction.options.getString('razon');
-  const guildId = interaction.guild.id;
-
-  if (!sanciones[guildId]) sanciones[guildId] = [];
-  const sanctionId = sanciones[guildId].length + 1;
-
-  const registro = {
-    id: sanctionId,
-    user_id: miembro.id,
-    user_name: miembro.user.tag,
-    mod_id: interaction.user.id,
-    mod_name: interaction.user.tag,
-    tipo: '💰 Multa',
-    razon: `${razon} | Cantidad: $${cantidad.toLocaleString('es-ES')}`,
-    timestamp: new Date().toISOString()
-  };
-  sanciones[guildId].push(registro);
-  guardarSanciones();
-
-  const userData = getUserData(guildId, miembro.id);
-  userData.dinero -= cantidad;
-  if (userData.dinero < 0) userData.dinero = 0;
-  guardarIdentidades();
-
-  const embed = new EmbedBuilder()
-    .setTitle('💰 MULTA REGISTRADA')
-    .setColor(0xFFAA00)
-    .addFields(
-      { name: 'Usuario', value: `${miembro}`, inline: false },
-      { name: 'Cantidad', value: `**$${cantidad.toLocaleString('es-ES')}**`, inline: true },
-      { name: 'Nuevo balance', value: `**$${userData.dinero.toLocaleString('es-ES')}**`, inline: true },
-      { name: 'Razón', value: razon, inline: false }
-    )
-    .setFooter({ text: `Multa ID: ${sanctionId}` });
-
-  await interaction.reply({ embeds: [embed] });
-  try { await miembro.send({ embeds: [embed] }); } catch {}
-}
-
-async function handleArrestar(interaction) {
-  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) {
-    return interaction.reply({ content: '❌ Solo Policía puede arrestar.', flags: MessageFlags.Ephemeral });
-  }
-
-  const modal = new ModalBuilder()
-    .setCustomId('modal-arrestar')
-    .setTitle('🚔 Formulario de Arresto');
-
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nombre_ic').setLabel('Nombre IC (arrestado)').setStyle(TextInputStyle.Short).setRequired(true)),
-    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('articulos').setLabel('Artículos').setStyle(TextInputStyle.Paragraph).setRequired(true)),
-    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('policias').setLabel('Policías que realizaron el arresto').setStyle(TextInputStyle.Short).setRequired(true)),
-    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('tiempo').setLabel('Tiempo en cárcel (ej: 30 minutos)').setStyle(TextInputStyle.Short).setRequired(true))
-  );
-
-  await interaction.showModal(modal);
-}
-
-// ======================
-// ANUNCIO RP
+// ANUNCIO RP (corregido)
 // ======================
 async function handleAnuncioRp(interaction) {
   if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
@@ -1581,17 +1377,22 @@ async function handleAnuncioRp(interaction) {
 // ======================
 async function handleEstadoServer(interaction) {
   const estado = serverAbierto ? '🟢 **ABIERTO**' : '🔴 **CERRADO**';
+
   let texto = `**Estado actual:** ${estado}\n`;
+
   if (serverAbierto && ultimaApertura) {
     texto += `**Abierto desde:** <t:${Math.floor(ultimaApertura / 1000)}:R>\n`;
   }
+
   let votacionActiva = 'No hay votación activa.';
   for (const [_, poll] of votes.entries()) {
     if (poll.channel.id === interaction.channel.id) {
-      votacionActiva = `✅ **Votación activa** (${poll.yes + poll.later + poll.no} votos)`;
+      const total = poll.yes + poll.later + poll.no;
+      votacionActiva = `✅ **Votación activa** (${total} votos)`;
       break;
     }
   }
+
   texto += `\n${votacionActiva}`;
 
   const embed = new EmbedBuilder()
@@ -1647,8 +1448,8 @@ async function handleSueldo(interaction) {
   await interaction.deferReply();
   const userData = getUserData(interaction.guild.id, interaction.user.id);
   const member = interaction.member;
-  const ahora = Date.now();
 
+  const ahora = Date.now();
   if (userData.lastSalary && ahora - userData.lastSalary < 86400000) {
     const tiempoRestante = Math.ceil((86400000 - (ahora - userData.lastSalary)) / 3600000);
     return interaction.editReply(`⏳ Ya cobraste tu sueldo. Próximo cobro en **${tiempoRestante} horas**.`);
@@ -1681,12 +1482,16 @@ async function handleTransferir(interaction) {
   const target = interaction.options.getMember('usuario');
   const cantidad = interaction.options.getInteger('cantidad');
 
-  if (cantidad < 100) return interaction.reply({ content: '❌ La cantidad mínima es 100 $.', flags: MessageFlags.Ephemeral });
+  if (cantidad < 100) {
+    return interaction.reply({ content: '❌ La cantidad mínima es 100 $.', flags: MessageFlags.Ephemeral });
+  }
 
   const userData = getUserData(interaction.guild.id, interaction.user.id);
   const targetData = getUserData(interaction.guild.id, target.id);
 
-  if (userData.dinero < cantidad) return interaction.reply({ content: '❌ No tienes suficiente dinero.', flags: MessageFlags.Ephemeral });
+  if (userData.dinero < cantidad) {
+    return interaction.reply({ content: '❌ No tienes suficiente dinero.', flags: MessageFlags.Ephemeral });
+  }
 
   userData.dinero -= cantidad;
   targetData.dinero += cantidad;
@@ -1708,10 +1513,15 @@ async function handleApostar(interaction) {
   const cantidad = interaction.options.getInteger('cantidad');
   const opcion = interaction.options.getString('opcion');
 
-  if (cantidad < 100) return interaction.reply({ content: '❌ La apuesta mínima es 100 $.', flags: MessageFlags.Ephemeral });
+  if (cantidad < 100) {
+    return interaction.reply({ content: '❌ La apuesta mínima es 100 $.', flags: MessageFlags.Ephemeral });
+  }
 
   const userData = getUserData(interaction.guild.id, interaction.user.id);
-  if (userData.dinero < cantidad) return interaction.reply({ content: '❌ No tienes suficiente dinero.', flags: MessageFlags.Ephemeral });
+
+  if (userData.dinero < cantidad) {
+    return interaction.reply({ content: '❌ No tienes suficiente dinero.', flags: MessageFlags.Ephemeral });
+  }
 
   const gana = Math.random() < 0.5;
 
@@ -1751,7 +1561,9 @@ async function handleLeaderboard(interaction) {
     .sort((a, b) => b.dinero - a.dinero)
     .slice(0, 10);
 
-  if (ranking.length === 0) return interaction.editReply('📭 Todavía no hay nadie con dinero.');
+  if (ranking.length === 0) {
+    return interaction.editReply('📭 Todavía no hay nadie con dinero.');
+  }
 
   const embed = new EmbedBuilder()
     .setTitle('🏆 TABLA DE CLASIFICACIÓN - MÁS RICOS')
@@ -1762,228 +1574,18 @@ async function handleLeaderboard(interaction) {
     const member = interaction.guild.members.cache.get(entry.userId);
     const name = member ? member.user.tag : `ID: ${entry.userId}`;
     const medalla = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**#${i+1}**`;
-    embed.addFields({ name: `${medalla} ${name}`, value: `**$${entry.dinero.toLocaleString('es-ES')}**`, inline: false });
+    embed.addFields({
+      name: `${medalla} ${name}`,
+      value: `**$${entry.dinero.toLocaleString('es-ES')}**`,
+      inline: false
+    });
   });
 
   await interaction.editReply({ embeds: [embed] });
 }
 
 // ======================
-// TIENDA COMPLETA
-// ======================
-
-async function handleAgregarProducto(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo administradores pueden añadir productos.', flags: MessageFlags.Ephemeral });
-  }
-
-  const nombre = interaction.options.getString('nombre');
-  const precio = interaction.options.getInteger('precio');
-  const descripcion = interaction.options.getString('descripcion');
-  const stockInput = interaction.options.getInteger('stock');
-  const stock = (stockInput === 0 || stockInput === null) ? null : stockInput;
-  const emoji = interaction.options.getString('emoji') || '📦';
-
-  const guildTienda = getGuildTienda(interaction.guild.id);
-  guildTienda.push({
-    id: Date.now().toString(),
-    nombre,
-    precio,
-    descripcion,
-    stock,
-    emoji
-  });
-
-  guardarTienda();
-
-  await interaction.reply({ content: `✅ **${nombre}** añadido correctamente.\nStock: ${stock === null ? '∞ (Ilimitado)' : stock}`, flags: MessageFlags.Ephemeral });
-}
-
-async function handleBorrarProducto(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo administradores.', flags: MessageFlags.Ephemeral });
-  }
-  const id = interaction.options.getString('id');
-  const guildTienda = getGuildTienda(interaction.guild.id);
-  const index = guildTienda.findIndex(p => p.id === id);
-  if (index === -1) return interaction.reply({ content: '❌ Producto no encontrado.', flags: MessageFlags.Ephemeral });
-
-  const nombre = guildTienda[index].nombre;
-  guildTienda.splice(index, 1);
-  guardarTienda();
-
-  await interaction.reply({ content: `🗑️ Producto **${nombre}** eliminado de la tienda.`, flags: MessageFlags.Ephemeral });
-}
-
-async function handleActualizarStock(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo administradores.', flags: MessageFlags.Ephemeral });
-  }
-  const id = interaction.options.getString('id');
-  const nuevoStockInput = interaction.options.getInteger('nuevo_stock');
-  const nuevoStock = nuevoStockInput === 0 ? null : nuevoStockInput;
-
-  const guildTienda = getGuildTienda(interaction.guild.id);
-  const producto = guildTienda.find(p => p.id === id);
-  if (!producto) return interaction.reply({ content: '❌ Producto no encontrado.', flags: MessageFlags.Ephemeral });
-
-  producto.stock = nuevoStock;
-  guardarTienda();
-
-  await interaction.reply({ content: `✅ Stock de **${producto.nombre}** actualizado a **${nuevoStock === null ? '∞' : nuevoStock}**.`, flags: MessageFlags.Ephemeral });
-}
-
-async function handleVerTienda(interaction) {
-  const guildTienda = getGuildTienda(interaction.guild.id);
-  if (guildTienda.length === 0) return interaction.reply({ content: '🛒 La tienda está vacía.', flags: MessageFlags.Ephemeral });
-
-  const embed = new EmbedBuilder()
-    .setTitle('🛒 Tienda Albacete RP')
-    .setColor(0x00FFAA);
-
-  guildTienda.forEach(p => {
-    const stockText = p.stock === null ? '∞ (Ilimitado)' : p.stock;
-    embed.addFields({
-      name: `${p.emoji} ${p.nombre}`,
-      value: `**Precio:** $${p.precio}\n**Stock:** ${stockText}\n${p.descripcion}`,
-      inline: false
-    });
-  });
-
-  await interaction.reply({ embeds: [embed] });
-}
-
-async function handlePanelTienda(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo administradores.', flags: MessageFlags.Ephemeral });
-  }
-
-  const guildTienda = getGuildTienda(interaction.guild.id);
-  if (guildTienda.length === 0) return interaction.reply({ content: 'No hay productos en la tienda.', flags: MessageFlags.Ephemeral });
-
-  const embed = new EmbedBuilder()
-    .setTitle('🛒 TIENDA OFICIAL ALBACETE RP')
-    .setColor(0x00FFAA)
-    .setDescription('Selecciona el producto que deseas comprar:');
-
-  const select = new StringSelectMenuBuilder()
-    .setCustomId('tienda-select')
-    .setPlaceholder('Elige un producto...')
-    .addOptions(guildTienda.map(p => {
-      const stockText = p.stock === null ? '∞' : p.stock;
-      return new StringSelectMenuOptionBuilder()
-        .setLabel(p.nombre)
-        .setDescription(`$${p.precio} | Stock: ${stockText}`)
-        .setValue(p.id)
-        .setEmoji(p.emoji);
-    }));
-
-  const row = new ActionRowBuilder().addComponents(select);
-
-  await interaction.channel.send({ embeds: [embed], components: [row] });
-  await interaction.reply({ content: '✅ Panel de tienda creado.', flags: MessageFlags.Ephemeral });
-}
-
-async function handleTiendaSelect(interaction) {
-  const guildTienda = getGuildTienda(interaction.guild.id);
-  const producto = guildTienda.find(p => p.id === interaction.values[0]);
-  if (!producto) return interaction.reply({ content: '❌ Producto no encontrado.', flags: MessageFlags.Ephemeral });
-  if (producto.stock !== null && producto.stock <= 0) return interaction.reply({ content: '❌ Este producto está agotado.', flags: MessageFlags.Ephemeral });
-
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-  if (userData.dinero < producto.precio) {
-    return interaction.reply({ content: `❌ No tienes suficiente dinero.`, flags: MessageFlags.Ephemeral });
-  }
-
-  userData.dinero -= producto.precio;
-  if (producto.stock !== null) producto.stock--;
-  userData.purchases.push({
-    nombre: producto.nombre,
-    precio: producto.precio,
-    fecha: new Date().toLocaleString('es-ES')
-  });
-
-  guardarTienda();
-  guardarIdentidades();
-
-  const embed = new EmbedBuilder()
-    .setTitle('✅ ¡Compra realizada!')
-    .setDescription(`Has comprado **${producto.nombre}**`)
-    .setColor(0x00FF88)
-    .addFields({ name: 'Precio', value: `**$${producto.precio}**`, inline: true }, { name: 'Balance restante', value: `**$${userData.dinero.toLocaleString('es-ES')}**`, inline: true });
-
-  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-}
-
-async function handleComprar(interaction) {
-  const id = interaction.options.getString('id');
-  const guildTienda = getGuildTienda(interaction.guild.id);
-  const producto = guildTienda.find(p => p.id === id);
-  if (!producto) return interaction.reply({ content: '❌ Producto no encontrado.', flags: MessageFlags.Ephemeral });
-  if (producto.stock !== null && producto.stock <= 0) return interaction.reply({ content: '❌ Este producto está agotado.', flags: MessageFlags.Ephemeral });
-
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-  if (userData.dinero < producto.precio) {
-    return interaction.reply({ content: `❌ No tienes suficiente dinero. Necesitas **$${producto.precio}**.`, flags: MessageFlags.Ephemeral });
-  }
-
-  userData.dinero -= producto.precio;
-  if (producto.stock !== null) producto.stock--;
-  userData.purchases.push({
-    nombre: producto.nombre,
-    precio: producto.precio,
-    fecha: new Date().toLocaleString('es-ES')
-  });
-
-  guardarTienda();
-  guardarIdentidades();
-
-  const embed = new EmbedBuilder()
-    .setTitle('✅ Compra Exitosa')
-    .setDescription(`Has comprado **${producto.nombre}**`)
-    .setColor(0x00FF88)
-    .addFields({ name: 'Precio', value: `**$${producto.precio}**`, inline: true }, { name: 'Balance actual', value: `**$${userData.dinero.toLocaleString('es-ES')}**`, inline: true });
-
-  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-}
-
-async function handleInventario(interaction) {
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-  if (userData.purchases.length === 0) {
-    return interaction.reply({ content: '🎒 Aún no has comprado nada en la tienda.', flags: MessageFlags.Ephemeral });
-  }
-
-  const embed = new EmbedBuilder()
-    .setTitle(`🎒 Tu Inventario - ${interaction.user.tag}`)
-    .setColor(0xFFD700);
-
-  userData.purchases.forEach((p, i) => {
-    embed.addFields({
-      name: `#${i + 1} ${p.nombre}`,
-      value: `**$${p.precio}** • ${p.fecha}`,
-      inline: false
-    });
-  });
-
-  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-}
-
-async function handleClearTienda(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo administradores.', flags: MessageFlags.Ephemeral });
-  }
-  const guildTienda = getGuildTienda(interaction.guild.id);
-  const cantidad = guildTienda.length;
-  guildTienda.length = 0;
-  guardarTienda();
-  await interaction.reply({ content: `🗑️ Se han eliminado **${cantidad}** productos de la tienda.` });
-}
-
-// ======================
 // LOGIN DEL BOT
 // ======================
 client.login(process.env.TOKEN)
-  .then(() => {
-    console.log(`🚀 Bot Albacete RP conectado correctamente como ${client.user.tag}`);
-  })
   .catch(err => console.error('❌ Error al iniciar sesión:', err));
