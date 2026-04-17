@@ -108,16 +108,18 @@ let prestamosGlobal = [];
 function cargarTienda() {
   if (fs.existsSync(TIENDA_FILE)) {
     try {
-      tiendaItems = JSON.parse(fs.readFileSync(TIENDA_FILE, 'utf-8'));
-      console.log('✅ Tienda cargada correctamente.');
+      const data = JSON.parse(fs.readFileSync(TIENDA_FILE, 'utf-8'));
+      tiendaItems = Array.isArray(data) ? data : [];
+      console.log(`✅ Tienda cargada correctamente (${tiendaItems.length} artículos).`);
     } catch (error) {
-      console.error('❌ Error al cargar tienda:', error.message);
+      console.error('❌ Error al cargar tienda.json (archivo corrupto). Se reinicia.', error.message);
       tiendaItems = [];
+      fs.writeFileSync(TIENDA_FILE, JSON.stringify([], null, 4));
     }
   } else {
     tiendaItems = [];
     fs.writeFileSync(TIENDA_FILE, JSON.stringify([], null, 4));
-    console.log('ℹ️ Archivo tienda.json creado.');
+    console.log('ℹ️ Archivo tienda.json creado (estaba vacío).');
   }
 }
 
@@ -715,7 +717,11 @@ async function handlePanelTiendaButton(interaction) {
   }
 
   if (customId === 'panel_view_items') {
-    let desc = tiendaItems.map(i => `**${i.nombre}** (${i.id}) - 💰 ${i.precio} $ | 📦 ${i.stock}`).join('\n') || 'No hay artículos en la tienda.';
+    if (!Array.isArray(tiendaItems)) tiendaItems = [];
+
+    let desc = tiendaItems.map(i => 
+      `**${i.nombre || 'Sin nombre'}** (${i.id || 'SIN-ID'}) - 💰 $${Number(i.precio || 0).toLocaleString('es-ES')} | 📦 ${Number(i.stock || 0)}`
+    ).join('\n') || 'No hay artículos en la tienda.';
     await interaction.reply({
       embeds: [new EmbedBuilder().setTitle('📋 Artículos de la Tienda').setDescription(desc).setColor('#7289da')],
       flags: MessageFlags.Ephemeral
@@ -1318,7 +1324,7 @@ async function handleModalSubmit(interaction) {
       if (isNaN(precio) || isNaN(stock) || precio <= 0 || stock <= 0) {
         return interaction.reply({ content: '❌ Precio y stock deben ser números positivos.', flags: MessageFlags.Ephemeral });
       }
-
+    if (!Array.isArray(tiendaItems)) tiendaItems = [];
       const id = generarIDCorto('ART');
       tiendaItems.push({ id, nombre, precio, stock, descripcion });
       guardarTienda();
@@ -1342,7 +1348,7 @@ async function handleModalSubmit(interaction) {
       if (!item) {
         return interaction.reply({ content: `❌ No existe ningún artículo con ID **${itemId}**.`, flags: MessageFlags.Ephemeral });
       }
-
+    if (!Array.isArray(tiendaItems)) tiendaItems = [];
       item.stock += cantidad;
       guardarTienda();
 
@@ -2005,24 +2011,38 @@ async function handleLoteriaHistorial(interaction) {
 // COMANDOS DE TIENDA
 // ======================
 async function handleTienda(interaction) {
-  if (tiendaItems.length === 0) {
-    return interaction.reply({ content: '🛒 La tienda está vacía en este momento.', flags: MessageFlags.Ephemeral });
-  }
+  try {
+    // Seguridad obligatoria
+    if (!Array.isArray(tiendaItems)) tiendaItems = [];
 
-  const embed = new EmbedBuilder()
-    .setTitle('🛒 TIENDA DEL SERVIDOR ALBACETE RP')
-    .setColor('#7289da')
-    .setDescription('Artículos disponibles:');
+    if (tiendaItems.length === 0) {
+      return interaction.reply({
+        content: '🛒 La tienda está vacía en este momento.\n\nUsa `/paneltienda` (solo admins) para añadir artículos.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
 
-  tiendaItems.forEach(item => {
-    embed.addFields({
-      name: `**${item.nombre}** (${item.id})`,
-      value: `💰 **$${item.precio.toLocaleString('es-ES')}** | 📦 Stock: **${item.stock}**\n${item.descripcion}`,
-      inline: false
+    const embed = new EmbedBuilder()
+      .setTitle('🛒 TIENDA DEL SERVIDOR ALBACETE RP')
+      .setColor('#7289da')
+      .setDescription('Artículos disponibles:');
+
+    tiendaItems.forEach(item => {
+      embed.addFields({
+        name: `**${item.nombre || 'Sin nombre'}** (${item.id || 'SIN-ID'})`,
+        value: `💰 **$${Number(item.precio || 0).toLocaleString('es-ES')}** | 📦 Stock: **${Number(item.stock || 0)}**\n${item.descripcion || 'Sin descripción'}`,
+        inline: false
+      });
     });
-  });
 
-  await interaction.reply({ embeds: [embed] });
+    await interaction.reply({ embeds: [embed] });
+  } catch (error) {
+    console.error('❌ Error en handleTienda:', error);
+    await interaction.reply({ 
+      content: '❌ Ocurrió un error al mostrar la tienda.', 
+      flags: MessageFlags.Ephemeral 
+    });
+  }
 }
 
 async function handleAñadirArticulo(interaction) {
