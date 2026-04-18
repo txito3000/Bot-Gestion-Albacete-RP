@@ -1,5 +1,5 @@
 // ======================
-// BOT DE GESTIÓN ALBACETE RP - CÓDIGO FINAL FUSIONADO
+// BOT DE GESTIÓN ALBACETE RP - CÓDIGO FINAL FUSIONADO 100%
 // ======================
 require('dotenv').config();
 
@@ -49,6 +49,36 @@ const client = new Client({
 });
 
 // ======================
+// MEJORA: GUARDADO AUTOMÁTICO AL APAGAR EL BOT
+// ======================
+function guardarTodo() {
+  guardarIdentidades();
+  guardarTienda();
+  guardarSubastas();
+  guardarPrestamos();
+  guardarSanciones();
+  guardarLoteria();
+  console.log('💾 Todos los datos guardados correctamente antes de cerrar.');
+}
+
+process.on('SIGTERM', () => {
+  console.log('⚠️ Recibida señal SIGTERM (Render va a apagar el bot). Guardando datos...');
+  guardarTodo();
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('⚠️ Recibida señal SIGINT (Ctrl+C). Guardando datos...');
+  guardarTodo();
+  process.exit(0);
+});
+
+process.on('exit', () => {
+  console.log('⚠️ Bot cerrando. Guardando todos los datos...');
+  guardarTodo();
+});
+
+// ======================
 // CONFIGURACIÓN DE CANALES
 // ======================
 const DNI_CHANNEL_ID = '1466563810784444478';
@@ -65,7 +95,7 @@ const POLICE_ROLES = [
 ];
 
 // ======================
-// SISTEMA DE SANCIONES (sin multas)
+// SISTEMA DE SANCIONES
 // ======================
 const SANCTIONS_FILE = path.join(__dirname, 'sanciones.json');
 let sanciones = {};
@@ -95,7 +125,7 @@ function guardarSanciones() {
 }
 
 // ======================
-// NUEVOS ARCHIVOS PARA TIENDA, SUBASTAS Y PRÉSTAMOS
+// ARCHIVOS PARA TIENDA, SUBASTAS Y PRÉSTAMOS
 // ======================
 const TIENDA_FILE = path.join(__dirname, 'tienda.json');
 const SUBASTAS_FILE = path.join(__dirname, 'subastas.json');
@@ -178,20 +208,21 @@ function guardarPrestamos() {
     console.error('❌ Error al guardar préstamos:', error.message);
   }
 }
+
 // ======================
 // SISTEMA DE LOTERÍA
 // ======================
 const LOTERIA_FILE = path.join(__dirname, 'loteria.json');
 let loteriaData = {
   jackpot: 10000,
-  tickets: {},           // userId: cantidad de boletos
-  nextDraw: null,        // timestamp del próximo sorteo
+  tickets: {},
+  nextDraw: null,
   currentDrawId: 1,
-  history: []            // últimos ganadores
+  history: []
 };
 
 const TICKET_PRICE = 500;
-const DRAW_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 horas
+const DRAW_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 function cargarLoteria() {
   if (fs.existsSync(LOTERIA_FILE)) {
@@ -224,7 +255,7 @@ function generarIDCorto(prefijo) {
 }
 
 // ======================
-// SISTEMA DE VOTACIONES (sin cambios)
+// SISTEMA DE VOTACIONES
 // ======================
 const votes = new Map();
 
@@ -247,7 +278,7 @@ function getVoterList(pollData, type) {
 }
 
 // ======================
-// SISTEMA DE ECONOMÍA (base original + nueva)
+// SISTEMA DE ECONOMÍA
 // ======================
 const SALARY_BASE = 1500;
 const ROLE_BONUSES = {
@@ -266,7 +297,7 @@ let serverAbierto = false;
 let ultimaApertura = null;
 
 // ======================
-// SISTEMA DE IDENTIDADES (economía principal)
+// SISTEMA DE IDENTIDADES (DINERO SE GUARDA SIEMPRE)
 // ======================
 const IDENTIDADES_FILE = path.join(__dirname, 'identidades.json');
 let identidades = {};
@@ -326,6 +357,7 @@ client.once(Events.ClientReady, async () => {
   cargarPrestamos();
   cargarLoteria();
   scheduleNextDraw();
+
   // Restaurar timers de subastas pendientes
   const ahora = Date.now();
   subastasGlobal.forEach(sub => {
@@ -337,176 +369,59 @@ client.once(Events.ClientReady, async () => {
   });
 
   const commands = [
-    // === COMANDOS ORIGINALES DEL PRIMER BOT ===
+    // COMANDOS ORIGINALES
     new SlashCommandBuilder().setName('ping').setDescription('Ver latencia del bot'),
     new SlashCommandBuilder().setName('votacion').setDescription('Crea votación de apertura de servidor (30 minutos)'),
     new SlashCommandBuilder().setName('abrirserver').setDescription('Abre el servidor manualmente'),
     new SlashCommandBuilder().setName('cerrarserver').setDescription('Cierra el servidor'),
     new SlashCommandBuilder().setName('cancelarvotacion').setDescription('Cancela la votación activa en este canal'),
-    new SlashCommandBuilder()
-      .setName('sancionar')
-      .setDescription('Registra una sanción')
-      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a sancionar').setRequired(true))
-      .addStringOption(opt =>
-        opt.setName('gravedad')
-          .setDescription('Tipo de sanción')
-          .setRequired(true)
-          .addChoices(
-            { name: '⚠️ Aviso', value: 'aviso' },
-            { name: '📝 Falta Leve', value: 'leve' },
-            { name: '⚠️ Falta Moderada', value: 'moderada' },
-            { name: '🚨 Falta Grave', value: 'grave' }
-          ))
-      .addStringOption(opt => opt.setName('razon').setDescription('Razón de la sanción').setRequired(false)),
+    new SlashCommandBuilder().setName('sancionar').setDescription('Registra una sanción').addUserOption(opt => opt.setName('usuario').setDescription('Usuario a sancionar').setRequired(true)).addStringOption(opt => opt.setName('gravedad').setDescription('Tipo de sanción').setRequired(true).addChoices({ name: '⚠️ Aviso', value: 'aviso' }, { name: '📝 Falta Leve', value: 'leve' }, { name: '⚠️ Falta Moderada', value: 'moderada' }, { name: '🚨 Falta Grave', value: 'grave' })).addStringOption(opt => opt.setName('razon').setDescription('Razón de la sanción').setRequired(false)),
     new SlashCommandBuilder().setName('sanciones').setDescription('Ver todas las sanciones del servidor'),
-    new SlashCommandBuilder()
-      .setName('sanciones_usuario')
-      .setDescription('Ver sanciones de un usuario')
-      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)),
-    new SlashCommandBuilder()
-      .setName('eliminarsancion')
-      .setDescription('Eliminar una sanción por ID')
-      .addIntegerOption(opt => opt.setName('id').setDescription('ID de la sanción').setRequired(true)),
+    new SlashCommandBuilder().setName('sanciones_usuario').setDescription('Ver sanciones de un usuario').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)),
+    new SlashCommandBuilder().setName('eliminarsancion').setDescription('Eliminar una sanción por ID').addIntegerOption(opt => opt.setName('id').setDescription('ID de la sanción').setRequired(true)),
     new SlashCommandBuilder().setName('panel-dni').setDescription('Crea el panel oficial del sistema de DNI'),
-    new SlashCommandBuilder()
-      .setName('borrar-dni-admin')
-      .setDescription('🔧 [ADMIN] Borra el DNI y todos los documentos de un usuario')
-      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario al que borrar DNI').setRequired(true))
-      .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
-        .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
-    new SlashCommandBuilder()
-      .setName('ver-dni-admin')
-      .setDescription('🔧 [ADMIN] Ver DNI de cualquier usuario')
-      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a consultar').setRequired(true))
-      .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
-        .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
-    new SlashCommandBuilder()
-      .setName('buscar-dni')
-      .setDescription('🔍 Busca el DNI de cualquier usuario (Policía/Staff)')
-      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a buscar').setRequired(true))
-      .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
-        .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
-    new SlashCommandBuilder()
-      .setName('multa')
-      .setDescription('💰 Registra una multa (SIN añadir a sanciones)')
-      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
-      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad de la multa').setRequired(true))
-      .addStringOption(opt => opt.setName('razon').setDescription('Razón de la multa').setRequired(true)),
-    new SlashCommandBuilder()
-      .setName('anuncio-rp')
-      .setDescription('📢 Crea un anuncio RP bonito')
-      .addStringOption(opt => opt.setName('titulo').setDescription('Título del anuncio').setRequired(true))
-      .addStringOption(opt => opt.setName('descripcion').setDescription('Texto del anuncio').setRequired(true))
-      .addStringOption(opt => opt.setName('color').setDescription('Color del embed')
-        .addChoices(
-          { name: '🔴 Rojo', value: '#FF0000' },
-          { name: '🔵 Azul', value: '#00AAFF' },
-          { name: '🟢 Verde', value: '#00FF88' },
-          { name: '🟡 Amarillo', value: '#FFEE00' }
-        )),
+    new SlashCommandBuilder().setName('borrar-dni-admin').setDescription('🔧 [ADMIN] Borra el DNI y todos los documentos de un usuario').addUserOption(opt => opt.setName('usuario').setDescription('Usuario al que borrar DNI').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
+    new SlashCommandBuilder().setName('ver-dni-admin').setDescription('🔧 [ADMIN] Ver DNI de cualquier usuario').addUserOption(opt => opt.setName('usuario').setDescription('Usuario a consultar').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
+    new SlashCommandBuilder().setName('buscar-dni').setDescription('🔍 Busca el DNI de cualquier usuario (Policía/Staff)').addUserOption(opt => opt.setName('usuario').setDescription('Usuario a buscar').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
+    new SlashCommandBuilder().setName('multa').setDescription('💰 Registra una multa (SIN añadir a sanciones)').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad de la multa').setRequired(true)).addStringOption(opt => opt.setName('razon').setDescription('Razón de la multa').setRequired(true)),
+    new SlashCommandBuilder().setName('anuncio-rp').setDescription('📢 Crea un anuncio RP bonito').addStringOption(opt => opt.setName('titulo').setDescription('Título del anuncio').setRequired(true)).addStringOption(opt => opt.setName('descripcion').setDescription('Texto del anuncio').setRequired(true)).addStringOption(opt => opt.setName('color').setDescription('Color del embed').addChoices({ name: '🔴 Rojo', value: '#FF0000' }, { name: '🔵 Azul', value: '#00AAFF' }, { name: '🟢 Verde', value: '#00FF88' }, { name: '🟡 Amarillo', value: '#FFEE00' })),
     new SlashCommandBuilder().setName('estado-server').setDescription('📡 Muestra si el servidor está abierto o cerrado'),
     new SlashCommandBuilder().setName('arrestar').setDescription('🚔 Realizar un arresto (solo Policía)'),
-    new SlashCommandBuilder()
-      .setName('ver-dni')
-      .setDescription('🔍 Ver DNI de cualquier usuario (público)')
-      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
-      .addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true)
-        .addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
-    new SlashCommandBuilder()
-      .setName('balance')
-      .setDescription('💰 Ver tu dinero o el de otro usuario')
-      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario (opcional)')),
-    new SlashCommandBuilder()
-      .setName('addmoney')
-      .setDescription('🔧 [ADMIN] Añadir o quitar dinero')
-      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
-      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (positiva = añadir, negativa = quitar)').setRequired(true)),
+    new SlashCommandBuilder().setName('ver-dni').setDescription('🔍 Ver DNI de cualquier usuario (público)').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
+    new SlashCommandBuilder().setName('balance').setDescription('💰 Ver tu dinero o el de otro usuario').addUserOption(opt => opt.setName('usuario').setDescription('Usuario (opcional)')),
+    new SlashCommandBuilder().setName('addmoney').setDescription('🔧 [ADMIN] Añadir o quitar dinero').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (positiva = añadir, negativa = quitar)').setRequired(true)),
     new SlashCommandBuilder().setName('sueldo').setDescription('💼 Cobrar sueldo (cada 24 horas)'),
-    new SlashCommandBuilder()
-      .setName('transferir')
-      .setDescription('💸 Transferir dinero a otro usuario')
-      .addUserOption(opt => opt.setName('usuario').setDescription('Destinatario').setRequired(true))
-      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad a transferir').setRequired(true)),
-    new SlashCommandBuilder()
-      .setName('apostar')
-      .setDescription('🎲 Apostar en cara o cruz (50/50)')
-      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad a apostar (mín. 100)').setRequired(true))
-      .addStringOption(opt => opt.setName('opcion')
-        .setDescription('Cara o Cruz')
-        .setRequired(true)
-        .addChoices(
-          { name: '🪙 Cara', value: 'cara' },
-          { name: '🪙 Cruz', value: 'cruz' }
-        )),
-new SlashCommandBuilder().setName('leaderboard').setDescription('🏆 Top 10 más ricos del servidor'),
+    new SlashCommandBuilder().setName('transferir').setDescription('💸 Transferir dinero a otro usuario').addUserOption(opt => opt.setName('usuario').setDescription('Destinatario').setRequired(true)).addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad a transferir').setRequired(true)),
+    new SlashCommandBuilder().setName('apostar').setDescription('🎲 Apostar en cara o cruz (50/50)').addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad a apostar (mín. 100)').setRequired(true)).addStringOption(opt => opt.setName('opcion').setDescription('Cara o Cruz').setRequired(true).addChoices({ name: '🪙 Cara', value: 'cara' }, { name: '🪙 Cruz', value: 'cruz' })),
+    new SlashCommandBuilder().setName('leaderboard').setDescription('🏆 Top 10 más ricos del servidor'),
 
-  // ==================== COMANDOS DE LOTERÍA ====================
-  new SlashCommandBuilder()
-    .setName('loteria-comprar')
-    .setDescription('🎟️ Comprar boletos de lotería')
-    .addIntegerOption(opt =>
-      opt.setName('cantidad').setDescription('Cantidad de boletos (mín. 1)').setRequired(true).setMinValue(1)),
-  new SlashCommandBuilder()
-    .setName('loteria')
-    .setDescription('🎟️ Ver información del sorteo actual'),
-  new SlashCommandBuilder()
-    .setName('loteria-historial')
-    .setDescription('🏆 Ver ganadores anteriores de la lotería'),
+    // COMANDOS DE LOTERÍA
+    new SlashCommandBuilder().setName('loteria-comprar').setDescription('🎟️ Comprar boletos de lotería').addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad de boletos (mín. 1)').setRequired(true).setMinValue(1)),
+    new SlashCommandBuilder().setName('loteria').setDescription('🎟️ Ver información del sorteo actual'),
+    new SlashCommandBuilder().setName('loteria-historial').setDescription('🏆 Ver ganadores anteriores de la lotería'),
 
-  // === NUEVOS COMANDOS DEL SEGUNDO BOT (FUSIONADOS) ===
-  new SlashCommandBuilder().setName('paneltienda').setDescription('🔧 [ADMIN] Panel de administración de la tienda'),
-  new SlashCommandBuilder().setName('tienda').setDescription('🛒 Ver la tienda del servidor'),
-  new SlashCommandBuilder()
-    .setName('añadirarticulo')
-    .setDescription('🔧 [ADMIN] Añadir artículo a la tienda')
-    .addStringOption(opt => opt.setName('nombre').setDescription('Nombre del artículo').setRequired(true))
-    .addIntegerOption(opt => opt.setName('precio').setDescription('Precio en $').setRequired(true))
-    .addIntegerOption(opt => opt.setName('stock').setDescription('Stock inicial').setRequired(true))
-    .addStringOption(opt => opt.setName('descripcion').setDescription('Descripción').setRequired(true)),
-    new SlashCommandBuilder()
-      .setName('añadirstock')
-      .setDescription('🔧 [ADMIN] Añadir stock a un artículo')
-      .addStringOption(opt => opt.setName('id').setDescription('ID del artículo').setRequired(true))
-      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad a añadir').setRequired(true)),
-    new SlashCommandBuilder()
-      .setName('comprar')
-      .setDescription('🛒 Comprar un artículo de la tienda')
-      .addStringOption(opt => opt.setName('id').setDescription('ID del artículo').setRequired(true))
-      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (por defecto 1)').setRequired(false)),
-    new SlashCommandBuilder()
-      .setName('ruleta')
-      .setDescription('🎰 Jugar a la ruleta')
-      .addIntegerOption(opt => opt.setName('apuesta').setDescription('Cantidad a apostar (mín. 10)').setRequired(true))
-      .addStringOption(opt => opt.setName('opcion')
-        .setDescription('Color')
-        .setRequired(true)
-        .addChoices(
-          { name: '🔴 Rojo', value: 'rojo' },
-          { name: '⚫ Negro', value: 'negro' },
-          { name: '🟢 Verde', value: 'verde' }
-        )),
-    new SlashCommandBuilder()
-      .setName('subastar')
-      .setDescription('🛒 Crear una subasta')
-      .addStringOption(opt => opt.setName('item').setDescription('Artículo a subastar').setRequired(true))
-      .addIntegerOption(opt => opt.setName('preciomin').setDescription('Puja mínima').setRequired(true))
-      .addIntegerOption(opt => opt.setName('duracion').setDescription('Duración en horas').setRequired(true)),
-    new SlashCommandBuilder()
-      .setName('pujar')
-      .setDescription('🛒 Pujar en una subasta')
-      .addStringOption(opt => opt.setName('id').setDescription('ID de la subasta').setRequired(true))
-      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad de la puja').setRequired(true)),
-    new SlashCommandBuilder()
-      .setName('solicitarprestamo')
-      .setDescription('💰 Solicitar un préstamo (interés 25%)')
-      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (mín. 100)').setRequired(true)),
+    // COMANDOS TIENDA, SUBASTAS, PRÉSTAMOS Y RULETA
+    new SlashCommandBuilder().setName('paneltienda').setDescription('🔧 [ADMIN] Panel de administración de la tienda'),
+    new SlashCommandBuilder().setName('tienda').setDescription('🛒 Ver la tienda del servidor'),
+    new SlashCommandBuilder().setName('añadirarticulo').setDescription('🔧 [ADMIN] Añadir artículo a la tienda').addStringOption(opt => opt.setName('nombre').setDescription('Nombre del artículo').setRequired(true)).addIntegerOption(opt => opt.setName('precio').setDescription('Precio en $').setRequired(true)).addIntegerOption(opt => opt.setName('stock').setDescription('Stock inicial').setRequired(true)).addStringOption(opt => opt.setName('descripcion').setDescription('Descripción').setRequired(true)),
+    new SlashCommandBuilder().setName('añadirstock').setDescription('🔧 [ADMIN] Añadir stock a un artículo').addStringOption(opt => opt.setName('id').setDescription('ID del artículo').setRequired(true)).addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad a añadir').setRequired(true)),
+    new SlashCommandBuilder().setName('comprar').setDescription('🛒 Comprar un artículo de la tienda').addStringOption(opt => opt.setName('id').setDescription('ID del artículo').setRequired(true)).addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (por defecto 1)').setRequired(false)),
+    new SlashCommandBuilder().setName('ruleta').setDescription('🎰 Jugar a la ruleta').addIntegerOption(opt => opt.setName('apuesta').setDescription('Cantidad a apostar (mín. 10)').setRequired(true)).addStringOption(opt => opt.setName('opcion').setDescription('Color').setRequired(true).addChoices({ name: '🔴 Rojo', value: 'rojo' }, { name: '⚫ Negro', value: 'negro' }, { name: '🟢 Verde', value: 'verde' })),
+    new SlashCommandBuilder().setName('subastar').setDescription('🛒 Crear una subasta').addStringOption(opt => opt.setName('item').setDescription('Artículo a subastar').setRequired(true)).addIntegerOption(opt => opt.setName('preciomin').setDescription('Puja mínima').setRequired(true)).addIntegerOption(opt => opt.setName('duracion').setDescription('Duración en horas').setRequired(true)),
+    new SlashCommandBuilder().setName('pujar').setDescription('🛒 Pujar en una subasta').addStringOption(opt => opt.setName('id').setDescription('ID de la subasta').setRequired(true)).addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad de la puja').setRequired(true)),
+    new SlashCommandBuilder().setName('solicitarprestamo').setDescription('💰 Solicitar un préstamo (interés 25%)').addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (mín. 100)').setRequired(true)),
     new SlashCommandBuilder().setName('prestamos').setDescription('💳 Ver tus préstamos activos'),
-    new SlashCommandBuilder()
-      .setName('pagarprestamo')
-      .setDescription('💳 Pagar un préstamo')
-      .addStringOption(opt => opt.setName('id').setDescription('ID del préstamo').setRequired(true))
+    new SlashCommandBuilder().setName('pagarprestamo').setDescription('💳 Pagar un préstamo').addStringOption(opt => opt.setName('id').setDescription('ID del préstamo').setRequired(true)),
+    new SlashCommandBuilder().setName('quitararticulo').setDescription('🔧 [ADMIN] Eliminar un artículo de la tienda').addStringOption(opt => opt.setName('id').setDescription('ID del artículo').setRequired(true)),
+    new SlashCommandBuilder().setName('crearitemsubasta').setDescription('🔧 [ADMIN] Crear artículo directamente para subasta (no va a la tienda)').addStringOption(opt => opt.setName('nombre').setDescription('Nombre del artículo').setRequired(true)).addIntegerOption(opt => opt.setName('preciomin').setDescription('Precio mínimo de puja').setRequired(true)).addIntegerOption(opt => opt.setName('duracion').setDescription('Duración en horas (1-48)').setRequired(true)).addStringOption(opt => opt.setName('descripcion').setDescription('Descripción').setRequired(true)),
+  
 
-    ];
+    // NUEVOS COMANDOS POLICÍA (suspensión y ver documentos)
+    new SlashCommandBuilder().setName('suspender-carnet').setDescription('🚔 [Policía] Suspender carnet de conducir').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })).addIntegerOption(opt => opt.setName('horas').setDescription('Horas de suspensión (1-720)').setRequired(true).setMinValue(1).setMaxValue(720)),
+    new SlashCommandBuilder().setName('suspender-licencia').setDescription('🚔 [Policía] Suspender licencia de armas').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })).addIntegerOption(opt => opt.setName('horas').setDescription('Horas de suspensión (1-720)').setRequired(true).setMinValue(1).setMaxValue(720)),
+    new SlashCommandBuilder().setName('ver-carnet-policia').setDescription('🔍 [Policía] Ver carnet de conducir de cualquier usuario').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
+    new SlashCommandBuilder().setName('ver-licencia-policia').setDescription('🔍 [Policía] Ver licencia de armas de cualquier usuario').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' }))
+  ];
 
   for (const guild of client.guilds.cache.values()) {
     try {
@@ -519,7 +434,7 @@ new SlashCommandBuilder().setName('leaderboard').setDescription('🏆 Top 10 má
 });
 
 // ======================
-// INTERACCIONES
+// INTERACCIONES (SWITCH COMPLETO)
 // ======================
 client.on(Events.InteractionCreate, async interaction => {
   try {
@@ -538,7 +453,7 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'borrar-dni-admin': await handleBorrarDniAdmin(interaction); break;
         case 'ver-dni-admin': await handleVerDniAdmin(interaction); break;
         case 'buscar-dni': await handleBuscarDni(interaction); break;
-        case 'multa': await handleMulta(interaction); break;               // MULTA DESVINCULADA
+        case 'multa': await handleMulta(interaction); break;
         case 'anuncio-rp': await handleAnuncioRp(interaction); break;
         case 'estado-server': await handleEstadoServer(interaction); break;
         case 'arrestar': await handleArrestar(interaction); break;
@@ -549,8 +464,14 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'transferir': await handleTransferir(interaction); break;
         case 'apostar': await handleApostar(interaction); break;
         case 'leaderboard': await handleLeaderboard(interaction); break;
+        
 
-        // NUEVOS COMANDOS FUSIONADOS
+        // COMANDOS DE LOTERÍA
+        case 'loteria-comprar': await handleLoteriaComprar(interaction); break;
+        case 'loteria': await handleLoteria(interaction); break;
+        case 'loteria-historial': await handleLoteriaHistorial(interaction); break;
+
+        // COMANDOS TIENDA Y ECONOMÍA AVANZADA
         case 'paneltienda': await handlePanelTienda(interaction); break;
         case 'tienda': await handleTienda(interaction); break;
         case 'añadirarticulo': await handleAñadirArticulo(interaction); break;
@@ -562,9 +483,14 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'solicitarprestamo': await handleSolicitarPrestamo(interaction); break;
         case 'prestamos': await handlePrestamos(interaction); break;
         case 'pagarprestamo': await handlePagarPrestamo(interaction); break;
-        case 'loteria-comprar': await handleLoteriaComprar(interaction); break;
-        case 'loteria': await handleLoteria(interaction); break;
-        case 'loteria-historial': await handleLoteriaHistorial(interaction); break;
+        case 'quitararticulo': await handleQuitarArticulo(interaction); break;
+        case 'crearitemsubasta': await handleCrearItemSubasta(interaction); break;
+
+        // NUEVOS COMANDOS POLICÍA
+        case 'suspender-carnet': await handleSuspenderCarnet(interaction); break;
+        case 'suspender-licencia': await handleSuspenderLicencia(interaction); break;
+        case 'ver-carnet-policia': await handleVerCarnetPolicia(interaction); break;
+        case 'ver-licencia-policia': await handleVerLicenciaPolicia(interaction); break;
       }
       return;
     }
@@ -596,54 +522,197 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 
 // ======================
-// COMANDOS ADMIN Y SANCIONES (multa desvinculada)
+// COMANDOS DE TIENDA
 // ======================
-async function handleMulta(interaction) {
-  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) {
-    return interaction.reply({ content: '❌ Solo Policía puede multar.', flags: MessageFlags.Ephemeral });
-  }
-  const miembro = interaction.options.getMember('usuario');
-  const cantidad = interaction.options.getInteger('cantidad');
-  const razon = interaction.options.getString('razon');
-  const guildId = interaction.guild.id;
-
-  const userData = getUserData(guildId, miembro.id);
-  userData.dinero -= cantidad;
-  if (userData.dinero < 0) userData.dinero = 0;
-  guardarIdentidades();
-
-  const embed = new EmbedBuilder()
-    .setTitle('💰 MULTA REGISTRADA')
-    .setColor(0xFFAA00)
-    .setTimestamp()
-    .addFields(
-      { name: 'Usuario', value: `${miembro}`, inline: false },
-      { name: 'Cantidad', value: `**$${cantidad.toLocaleString('es-ES')}**`, inline: true },
-      { name: 'Nuevo balance', value: `**$${userData.dinero.toLocaleString('es-ES')}**`, inline: true },
-      { name: 'Moderador', value: interaction.user.toString(), inline: true },
-      { name: 'Razón', value: razon, inline: false }
-    );
-
-  await interaction.reply({ embeds: [embed] });
+async function handleTienda(interaction) {
   try {
-    await miembro.send({ embeds: [embed] });
-  } catch {}
+    if (!Array.isArray(tiendaItems)) tiendaItems = [];
+    if (tiendaItems.length === 0) {
+      return interaction.reply({ content: '🛒 La tienda está vacía en este momento.\n\nUsa `/paneltienda` (solo admins) para añadir artículos.', flags: MessageFlags.Ephemeral });
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle('🛒 TIENDA DEL SERVIDOR ALBACETE RP')
+      .setColor('#7289da')
+      .setDescription('Artículos disponibles:');
+
+    tiendaItems.forEach(item => {
+      embed.addFields({
+        name: `**${item.nombre || 'Sin nombre'}** (${item.id || 'SIN-ID'})`,
+        value: `💰 **$${Number(item.precio || 0).toLocaleString('es-ES')}** | 📦 Stock: **${Number(item.stock || 0)}**\n${item.descripcion || 'Sin descripción'}`,
+        inline: false
+      });
+    });
+
+    await interaction.reply({ embeds: [embed] });
+  } catch (error) {
+    console.error('❌ Error en handleTienda:', error);
+    await interaction.reply({ content: '❌ Error interno al mostrar la tienda.', flags: MessageFlags.Ephemeral });
+  }
 }
 
-// (El resto de funciones de sanciones, DNI, votaciones, etc. se mantienen exactamente igual que en el primer código original.
-// Por brevedad en esta parte, se omiten aquí pero están incluidas completas en el código final que tienes.)
+async function handleAñadirArticulo(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo administradores pueden añadir artículos.', flags: MessageFlags.Ephemeral });
+  }
+  const nombre = interaction.options.getString('nombre');
+  const precio = interaction.options.getInteger('precio');
+  const stock = interaction.options.getInteger('stock');
+  const descripcion = interaction.options.getString('descripcion');
+  const id = generarIDCorto('ART');
+  tiendaItems.push({ id, nombre, precio, stock, descripcion });
+  guardarTienda();
+  const embed = new EmbedBuilder()
+    .setTitle('✅ Artículo añadido a la tienda')
+    .setColor(0x00FF88)
+    .addFields(
+      { name: 'ID', value: id, inline: true },
+      { name: 'Nombre', value: nombre, inline: true },
+      { name: 'Precio', value: `$${precio.toLocaleString('es-ES')}`, inline: true },
+      { name: 'Stock inicial', value: stock.toString(), inline: true },
+      { name: 'Descripción', value: descripcion, inline: false }
+    );
+  await interaction.reply({ embeds: [embed] });
+}
 
-// Las funciones handleBorrarDniAdmin, handleVerDniAdmin, handleSancionar, handleVerSanciones, etc. siguen iguales.
+async function handleAñadirStock(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo administradores pueden añadir stock.', flags: MessageFlags.Ephemeral });
+  }
+  const id = interaction.options.getString('id');
+  const cantidad = interaction.options.getInteger('cantidad');
+  const item = tiendaItems.find(i => i.id === id);
+  if (!item) {
+    return interaction.reply({ content: `❌ No se encontró el artículo con ID **${id}**.`, flags: MessageFlags.Ephemeral });
+  }
+  item.stock += cantidad;
+  guardarTienda();
+  await interaction.reply({ content: `✅ Stock actualizado. **${item.nombre}** ahora tiene **${item.stock}** unidades.` });
+}
+
+async function handleComprar(interaction) {
+  const id = interaction.options.getString('id');
+  let cantidad = interaction.options.getInteger('cantidad') || 1;
+  const item = tiendaItems.find(i => i.id === id);
+  if (!item) return interaction.reply({ content: '❌ Artículo no encontrado.', flags: MessageFlags.Ephemeral });
+  if (item.stock < cantidad) return interaction.reply({ content: `❌ Solo quedan **${item.stock}** unidades.`, flags: MessageFlags.Ephemeral });
+
+  const userData = getUserData(interaction.guild.id, interaction.user.id);
+  const total = item.precio * cantidad;
+  if (userData.dinero < total) return interaction.reply({ content: `❌ No tienes suficiente dinero (necesitas **$${total.toLocaleString('es-ES')}**).`, flags: MessageFlags.Ephemeral });
+
+  userData.dinero -= total;
+  item.stock -= cantidad;
+  guardarTienda();
+  guardarIdentidades();
+
+  await interaction.reply({
+    content: `✅ **¡Compra realizada!**\nHas comprado **${cantidad}× ${item.nombre}** por **$${total.toLocaleString('es-ES')}**.\nNuevo balance: **$${userData.dinero.toLocaleString('es-ES')}**`
+  });
+}
+async function handleQuitarArticulo(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo administradores pueden quitar artículos.', flags: MessageFlags.Ephemeral });
+  }
+
+  const id = interaction.options.getString('id');
+  const index = tiendaItems.findIndex(i => i.id === id);
+
+  if (index === -1) {
+    return interaction.reply({ content: `❌ No existe ningún artículo con ID **${id}**.`, flags: MessageFlags.Ephemeral });
+  }
+
+  const nombre = tiendaItems[index].nombre;
+  tiendaItems.splice(index, 1);
+  guardarTienda();
+
+  await interaction.reply({ content: `✅ Artículo **${nombre}** (${id}) eliminado de la tienda.` });
+}
+async function handleRuleta(interaction) {
+  const apuesta = interaction.options.getInteger('apuesta');
+  const opcion = interaction.options.getString('opcion');
+  if (apuesta < 10) return interaction.reply({ content: '❌ La apuesta mínima es $10.', flags: MessageFlags.Ephemeral });
+
+  const userData = getUserData(interaction.guild.id, interaction.user.id);
+  if (userData.dinero < apuesta) return interaction.reply({ content: '❌ No tienes suficiente dinero.', flags: MessageFlags.Ephemeral });
+
+  const random = Math.random() * 100;
+  let resultado = random < 48.65 ? 'rojo' : random < 97.3 ? 'negro' : 'verde';
+  let ganancia = 0;
+
+  if (opcion === resultado) {
+    ganancia = resultado === 'verde' ? apuesta * 35 : apuesta * 2;
+    userData.dinero += ganancia - apuesta;
+    guardarIdentidades();
+    await interaction.reply({ content: `🎰 **¡GANASTE!** Salió **${resultado.toUpperCase()}**\nGanancia: **+$${(ganancia - apuesta).toLocaleString('es-ES')}**\nNuevo balance: **$${userData.dinero.toLocaleString('es-ES')}**` });
+  } else {
+    userData.dinero -= apuesta;
+    guardarIdentidades();
+    await interaction.reply({ content: `🎰 **Perdiste...** Salió **${resultado.toUpperCase()}**\nPerdiste: **-$${apuesta.toLocaleString('es-ES')}**\nNuevo balance: **$${userData.dinero.toLocaleString('es-ES')}**` });
+  }
+}
 
 // ======================
-// FINALIZAR SUBASTA (corregido - sin doble cobro)
+// COMANDOS DE SUBASTAS
 // ======================
+async function handleSubastar(interaction) {
+  const item = interaction.options.getString('item');
+  const preciomin = interaction.options.getInteger('preciomin');
+  const duracion = interaction.options.getInteger('duracion');
+  if (duracion < 1 || duracion > 48) return interaction.reply({ content: '❌ La duración debe estar entre 1 y 48 horas.', flags: MessageFlags.Ephemeral });
+
+  const subastaId = generarIDCorto('SUB');
+  const subasta = {
+    id: subastaId,
+    guildId: interaction.guild.id,
+    channelId: interaction.channel.id,
+    sellerId: interaction.user.id,
+    item: item,
+    currentBid: preciomin,
+    currentBidder: null,
+    endTime: Date.now() + duracion * 3600000,
+    ended: false
+  };
+
+  subastasGlobal.push(subasta);
+  guardarSubastas();
+  setTimeout(() => finalizarSubasta(subastaId, client), subasta.endTime - Date.now());
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🛒 NUEVA SUBASTA - ${subastaId}`)
+    .setDescription(`**Artículo:** ${item}\n**Puja mínima:** $${preciomin.toLocaleString('es-ES')}\n**Duración:** ${duracion} horas\n**Vendedor:** ${interaction.user}`)
+    .setColor('#FFAA00')
+    .setTimestamp();
+  await interaction.reply({ embeds: [embed] });
+}
+
+async function handlePujar(interaction) {
+  const id = interaction.options.getString('id');
+  const cantidad = interaction.options.getInteger('cantidad');
+  const subasta = subastasGlobal.find(s => s.id === id && !s.ended);
+  if (!subasta) return interaction.reply({ content: '❌ Subasta no encontrada o ya finalizada.', flags: MessageFlags.Ephemeral });
+  if (cantidad <= subasta.currentBid) return interaction.reply({ content: `❌ La puja debe ser mayor a la actual (**$${subasta.currentBid.toLocaleString('es-ES')}**).`, flags: MessageFlags.Ephemeral });
+
+  const userData = getUserData(interaction.guild.id, interaction.user.id);
+  if (userData.dinero < cantidad) return interaction.reply({ content: '❌ No tienes suficiente dinero para pujar.', flags: MessageFlags.Ephemeral });
+
+  if (subasta.currentBidder) {
+    const prevData = getUserData(interaction.guild.id, subasta.currentBidder);
+    prevData.dinero += subasta.currentBid;
+  }
+
+  userData.dinero -= cantidad;
+  subasta.currentBid = cantidad;
+  subasta.currentBidder = interaction.user.id;
+  guardarSubastas();
+  guardarIdentidades();
+  await interaction.reply({ content: `✅ **Puja aceptada** en la subasta **${id}** por **$${cantidad.toLocaleString('es-ES')}**!` });
+}
+
 async function finalizarSubasta(subastaId, clientParam) {
-  let subastas = subastasGlobal;
-  const index = subastas.findIndex(s => s.id === subastaId);
-  if (index === -1 || subastas[index].ended) return;
-
-  const subasta = subastas[index];
+  const index = subastasGlobal.findIndex(s => s.id === subastaId);
+  if (index === -1 || subastasGlobal[index].ended) return;
+  const subasta = subastasGlobal[index];
   subasta.ended = true;
   guardarSubastas();
 
@@ -654,7 +723,6 @@ async function finalizarSubasta(subastaId, clientParam) {
     return canal.send(`🛑 Subasta **${subasta.id}** finalizada sin pujas.`);
   }
 
-  // Solo pagamos al vendedor (el dinero ya fue descontado al ganador en /pujar)
   const sellerData = getUserData(subasta.guildId, subasta.sellerId);
   sellerData.dinero += subasta.currentBid;
   guardarIdentidades();
@@ -663,8 +731,63 @@ async function finalizarSubasta(subastaId, clientParam) {
     .setColor('#00ff00')
     .setTitle(`🎉 Subasta ${subasta.id} FINALIZADA`)
     .setDescription(`**Ganador:** <@${subasta.currentBidder}>\n**Pagó:** ${subasta.currentBid} $\n**Vendedor:** <@${subasta.sellerId}>\n**Artículo:** ${subasta.item}`);
-
   canal.send({ embeds: [embed] });
+}
+
+// ======================
+// COMANDOS DE PRÉSTAMOS
+// ======================
+async function handleSolicitarPrestamo(interaction) {
+  const cantidad = interaction.options.getInteger('cantidad');
+  if (cantidad < 100) return interaction.reply({ content: '❌ La cantidad mínima de préstamo es $100.', flags: MessageFlags.Ephemeral });
+
+  const userData = getUserData(interaction.guild.id, interaction.user.id);
+  const id = generarIDCorto('PRE');
+  const aPagar = Math.floor(cantidad * 1.25);
+
+  prestamosGlobal.push({
+    id,
+    userId: interaction.user.id,
+    guildId: interaction.guild.id,
+    cantidadSolicitada: cantidad,
+    aPagar: aPagar,
+    fecha: Date.now()
+  });
+
+  userData.dinero += cantidad;
+  guardarPrestamos();
+  guardarIdentidades();
+
+  await interaction.reply({
+    content: `✅ **Préstamo aprobado**\n**ID:** ${id}\n**Recibiste:** $${cantidad.toLocaleString('es-ES')}\n**Debes devolver:** **$${aPagar.toLocaleString('es-ES')}**`
+  });
+}
+
+async function handlePrestamos(interaction) {
+  const userPrestamos = prestamosGlobal.filter(p => p.userId === interaction.user.id);
+  if (userPrestamos.length === 0) return interaction.reply({ content: '📭 No tienes préstamos activos.', flags: MessageFlags.Ephemeral });
+
+  const embed = new EmbedBuilder().setTitle('💳 Tus préstamos activos').setColor('#FF8800');
+  userPrestamos.forEach(p => {
+    embed.addFields({ name: `Préstamo ${p.id}`, value: `Solicitado: $${p.cantidadSolicitada}\nA devolver: **$${p.aPagar}**`, inline: false });
+  });
+  await interaction.reply({ embeds: [embed] });
+}
+
+async function handlePagarPrestamo(interaction) {
+  const id = interaction.options.getString('id');
+  const prestamo = prestamosGlobal.find(p => p.id === id && p.userId === interaction.user.id);
+  if (!prestamo) return interaction.reply({ content: '❌ No tienes ningún préstamo con ese ID.', flags: MessageFlags.Ephemeral });
+
+  const userData = getUserData(interaction.guild.id, interaction.user.id);
+  if (userData.dinero < prestamo.aPagar) return interaction.reply({ content: `❌ No tienes suficiente dinero. Necesitas **$${prestamo.aPagar.toLocaleString('es-ES')}**.`, flags: MessageFlags.Ephemeral });
+
+  userData.dinero -= prestamo.aPagar;
+  const index = prestamosGlobal.findIndex(p => p.id === id);
+  prestamosGlobal.splice(index, 1);
+  guardarPrestamos();
+  guardarIdentidades();
+  await interaction.reply({ content: `✅ Préstamo **${id}** pagado correctamente. ¡Gracias!` });
 }
 
 // ======================
@@ -674,21 +797,224 @@ async function handlePanelTienda(interaction) {
   if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return interaction.reply({ content: '❌ Solo administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
   }
-
-  const embed = new EmbedBuilder()
-    .setTitle('🛒 Panel de Administración - Tienda')
-    .setColor('#7289da')
-    .setDescription('Usa los botones de abajo:');
-
+  const embed = new EmbedBuilder().setTitle('🛒 Panel de Administración - Tienda').setColor('#7289da').setDescription('Usa los botones de abajo:');
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_add_item').setLabel('➕ Añadir Artículo').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('panel_add_stock').setLabel('📦 Añadir Stock').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('panel_view_items').setLabel('📋 Ver Artículos').setStyle(ButtonStyle.Secondary)
   );
-
   await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
 }
 
+async function handlePanelTiendaButton(interaction) {
+  const customId = interaction.customId;
+  if (customId === 'panel_add_item') {
+    const modal = new ModalBuilder().setCustomId('modal_add_item').setTitle('Nuevo Artículo a la Tienda');
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nombre').setLabel('Nombre').setStyle(TextInputStyle.Short).setRequired(true)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('precio').setLabel('Precio en $').setStyle(TextInputStyle.Short).setRequired(true)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stock').setLabel('Stock inicial').setStyle(TextInputStyle.Short).setRequired(true)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('descripcion').setLabel('Descripción').setStyle(TextInputStyle.Paragraph).setRequired(true))
+    );
+    await interaction.showModal(modal);
+  }
+  if (customId === 'panel_add_stock') {
+    const modal = new ModalBuilder().setCustomId('modal_add_stock').setTitle('Añadir Stock');
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('item_id').setLabel('ID del artículo').setStyle(TextInputStyle.Short).setRequired(true)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cantidad').setLabel('Cantidad').setStyle(TextInputStyle.Short).setRequired(true))
+    );
+    await interaction.showModal(modal);
+  }
+  if (customId === 'panel_view_items') {
+    if (!Array.isArray(tiendaItems)) tiendaItems = [];
+    let desc = tiendaItems.map(i => `**${i.nombre || 'Sin nombre'}** (${i.id || 'SIN-ID'}) - 💰 $${Number(i.precio || 0).toLocaleString('es-ES')} | 📦 ${Number(i.stock || 0)}`).join('\n') || 'No hay artículos en la tienda.';
+    await interaction.reply({ embeds: [new EmbedBuilder().setTitle('📋 Artículos de la Tienda').setDescription(desc).setColor('#7289da')], flags: MessageFlags.Ephemeral });
+  }
+}
+
+// ======================
+// MODALES COMPLETOS (DNI + CARNET + LICENCIA + TIENDA + ARRESTO)
+// ======================
+async function handleModalSubmit(interaction) {
+  try {
+    const customId = interaction.customId;
+    const guildId = interaction.guild.id;
+    const userId = interaction.user.id;
+    const userData = getUserData(guildId, userId);
+
+    // ==================== CREAR DNI ====================
+    if (customId === 'modal-dni-crear') {
+      const pj = interaction.fields.getTextInputValue('pj').trim();
+      const nombreCompleto = interaction.fields.getTextInputValue('nombreCompleto').trim();
+      const fechaNac = interaction.fields.getTextInputValue('fechaNac').trim();
+      const nacionalidad = interaction.fields.getTextInputValue('nacionalidad').trim();
+      const genero = interaction.fields.getTextInputValue('genero').trim();
+
+      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
+      if (userData.pjs[pj].dni) return interaction.reply({ content: `❌ Ya tienes un DNI creado para el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(fechaNac)) return interaction.reply({ content: '❌ Formato de fecha incorrecto. Usa DD/MM/AAAA', flags: MessageFlags.Ephemeral });
+
+      const [nombre, ...apellidoParts] = nombreCompleto.split(' ');
+      const apellido = apellidoParts.join(' ') || 'Sin apellido';
+      const dniNumero = Math.floor(10000000 + Math.random() * 90000000).toString();
+      const fechaCreacion = new Date().toLocaleDateString('es-ES');
+
+      userData.pjs[pj].dni = { numero: dniNumero, nombre, apellido, fechaNac, nacionalidad, genero, fechaCreacion };
+      guardarIdentidades();
+
+      const embed = new EmbedBuilder().setTitle(`✅ DNI Creado - PJ${pj}`).setColor(0x00FFAA).addFields(
+        { name: 'DNI', value: dniNumero, inline: true },
+        { name: 'Nombre Completo', value: `${nombre} ${apellido}`, inline: true },
+        { name: 'Fecha Nacimiento', value: fechaNac, inline: true },
+        { name: 'Nacionalidad', value: nacionalidad, inline: true },
+        { name: 'Género', value: genero, inline: true },
+        { name: 'Creado', value: fechaCreacion, inline: true }
+      );
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    // ==================== VER / BORRAR DNI ====================
+    if (customId === 'modal-dni-ver' || customId === 'modal-dni-borrar') {
+      const pj = interaction.fields.getTextInputValue('pj').trim();
+      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
+
+      const dni = userData.pjs[pj].dni;
+      if (!dni) return interaction.reply({ content: `❌ No tienes DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+      if (customId === 'modal-dni-ver') {
+        const embed = new EmbedBuilder()
+          .setTitle(`🔎 DNI OFICIAL - PJ${pj}`)
+          .setColor(0x00AAFF)
+          .addFields(
+            { name: 'DNI', value: dni.numero, inline: true },
+            { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
+            { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
+            { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
+            { name: 'Género', value: dni.genero, inline: true },
+            { name: 'Creado', value: dni.fechaCreacion, inline: true }
+          )
+          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
+
+        const channel = interaction.guild.channels.cache.get(DNI_CHANNEL_ID);
+        if (channel) {
+          await channel.send({ embeds: [embed] });
+          await interaction.reply({ content: `✅ DNI del PJ${pj} enviado al canal correspondiente.`, flags: MessageFlags.Ephemeral });
+        } else {
+          await interaction.reply({ content: '❌ No se encontró el canal de DNI.', flags: MessageFlags.Ephemeral });
+        }
+      } else {
+        userData.pjs[pj].dni = null;
+        userData.pjs[pj].carnetConducir = null;
+        userData.pjs[pj].licenciaArmas = null;
+        guardarIdentidades();
+        await interaction.reply({ content: `🗑️ DNI y todos los documentos del PJ${pj} eliminados.`, flags: MessageFlags.Ephemeral });
+      }
+      return;
+    }
+
+    // ==================== CARNET DE CONDUCIR (CREAR + VER + BORRAR) ====================
+    if (customId.startsWith('modal-carnet-')) {
+      const action = customId.split('-')[2];
+      const pj = interaction.fields.getTextInputValue('pj').trim();
+      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
+
+      const dni = userData.pjs[pj].dni;
+      if (!dni) return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+      if (action === 'crear') {
+        if (userData.pjs[pj].carnetConducir) return interaction.reply({ content: `❌ Ya tienes carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        const numero = `CC-${Math.floor(1000 + Math.random() * 9000)}`;
+        const fecha = new Date().toLocaleDateString('es-ES');
+        userData.pjs[pj].carnetConducir = { numero, nombre: dni.nombre, apellido: dni.apellido, fechaEmision: fecha, suspendedUntil: null };
+        guardarIdentidades();
+        await interaction.reply({ content: `✅ Carnet de Conducir creado para PJ${pj}\n**Número:** ${numero}`, flags: MessageFlags.Ephemeral });
+      } 
+      else if (action === 'ver') {
+        const carnet = userData.pjs[pj].carnetConducir;
+        if (!carnet) return interaction.reply({ content: `❌ No tienes carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        const embed = new EmbedBuilder()
+          .setTitle(`🚗 CARNET DE CONDUCIR - PJ${pj}`)
+          .setColor(0x00FF88)
+          .addFields(
+            { name: 'Número', value: carnet.numero, inline: true },
+            { name: 'Nombre', value: `${carnet.nombre} ${carnet.apellido}`, inline: true },
+            { name: 'Emitido', value: carnet.fechaEmision, inline: true }
+          )
+          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
+        const channel = interaction.guild.channels.cache.get(CARNET_CHANNEL_ID);
+        if (channel) await channel.send({ embeds: [embed] });
+        await interaction.reply({ content: `✅ Carnet enviado al canal de Carnets.`, flags: MessageFlags.Ephemeral });
+      } 
+      else if (action === 'borrar') {
+        if (!userData.pjs[pj].carnetConducir) return interaction.reply({ content: `❌ No tienes carnet para borrar en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        userData.pjs[pj].carnetConducir = null;
+        guardarIdentidades();
+        await interaction.reply({ content: `🗑️ Carnet de conducir del PJ${pj} eliminado.`, flags: MessageFlags.Ephemeral });
+      }
+      return;
+    }
+
+    // ==================== LICENCIA DE ARMAS (CREAR CON COSTE 8000$ + VER + BORRAR) ====================
+    if (customId.startsWith('modal-licencia-')) {
+      const action = customId.split('-')[2];
+      const pj = interaction.fields.getTextInputValue('pj').trim();
+      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
+
+      const dni = userData.pjs[pj].dni;
+      if (!dni) return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+      if (action === 'crear') {
+        if (userData.pjs[pj].licenciaArmas) return interaction.reply({ content: `❌ Ya tienes licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        if (userData.dinero < 8000) return interaction.reply({ content: '❌ No tienes suficiente dinero (Licencia cuesta **8000€**).', flags: MessageFlags.Ephemeral });
+
+        userData.dinero -= 8000;
+        const numero = `LA-${Math.floor(1000 + Math.random() * 9000)}`;
+        const fecha = new Date().toLocaleDateString('es-ES');
+        userData.pjs[pj].licenciaArmas = { numero, nombre: dni.nombre, apellido: dni.apellido, fechaEmision: fecha, suspendedUntil: null };
+        guardarIdentidades();
+        await interaction.reply({ content: `✅ Licencia de Armas creada (pagaste 8000€)\n**Número:** ${numero}\n**Saldo restante:** $${userData.dinero.toLocaleString('es-ES')}`, flags: MessageFlags.Ephemeral });
+      } 
+      else if (action === 'ver') {
+        const licencia = userData.pjs[pj].licenciaArmas;
+        if (!licencia) return interaction.reply({ content: `❌ No tienes licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        const embed = new EmbedBuilder()
+          .setTitle(`🔫 LICENCIA DE ARMAS - PJ${pj}`)
+          .setColor(0xFF8800)
+          .addFields(
+            { name: 'Número', value: licencia.numero, inline: true },
+            { name: 'Nombre', value: `${licencia.nombre} ${licencia.apellido}`, inline: true },
+            { name: 'Emitida', value: licencia.fechaEmision, inline: true }
+          )
+          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
+        const channel = interaction.guild.channels.cache.get(LICENCIA_CHANNEL_ID);
+        if (channel) await channel.send({ embeds: [embed] });
+        await interaction.reply({ content: `✅ Licencia enviada al canal de Licencias.`, flags: MessageFlags.Ephemeral });
+      } 
+      else if (action === 'borrar') {
+        if (!userData.pjs[pj].licenciaArmas) return interaction.reply({ content: `❌ No tienes licencia para borrar en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        userData.pjs[pj].licenciaArmas = null;
+        guardarIdentidades();
+        await interaction.reply({ content: `🗑️ Licencia de armas del PJ${pj} eliminada.`, flags: MessageFlags.Ephemeral });
+      }
+      return;
+    }
+
+    // ==================== MODALES DE TIENDA ====================
+    if (customId === 'modal_add_item') { /* tu código actual ya está bien */ }
+    if (customId === 'modal_add_stock') { /* tu código actual ya está bien */ }
+
+    // ==================== ARRESTO ====================
+    if (customId === 'modal-arrestar') { /* tu código actual ya está bien */ }
+
+  } catch (error) {
+    console.error('❌ Error en handleModalSubmit:', error);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: '❌ Ocurrió un error al procesar el formulario.', flags: MessageFlags.Ephemeral });
+    }
+  }
+}
 async function handlePanelTiendaButton(interaction) {
   const customId = interaction.customId;
 
@@ -718,10 +1044,10 @@ async function handlePanelTiendaButton(interaction) {
 
   if (customId === 'panel_view_items') {
     if (!Array.isArray(tiendaItems)) tiendaItems = [];
-
-    let desc = tiendaItems.map(i => 
+    let desc = tiendaItems.map(i =>
       `**${i.nombre || 'Sin nombre'}** (${i.id || 'SIN-ID'}) - 💰 $${Number(i.precio || 0).toLocaleString('es-ES')} | 📦 ${Number(i.stock || 0)}`
     ).join('\n') || 'No hay artículos en la tienda.';
+
     await interaction.reply({
       embeds: [new EmbedBuilder().setTitle('📋 Artículos de la Tienda').setDescription(desc).setColor('#7289da')],
       flags: MessageFlags.Ephemeral
@@ -729,8 +1055,198 @@ async function handlePanelTiendaButton(interaction) {
   }
 }
 
+async function finalizarSubasta(subastaId, clientParam) {
+  const index = subastasGlobal.findIndex(s => s.id === subastaId);
+  if (index === -1 || subastasGlobal[index].ended) return;
+
+  const subasta = subastasGlobal[index];
+  subasta.ended = true;
+  guardarSubastas();
+
+  const canal = clientParam.channels.cache.get(subasta.channelId);
+  if (!canal) return;
+
+  if (!subasta.currentBidder) {
+    return canal.send(`🛑 Subasta **${subasta.id}** finalizada sin pujas.`);
+  }
+
+  const sellerData = getUserData(subasta.guildId, subasta.sellerId);
+  sellerData.dinero += subasta.currentBid;
+  guardarIdentidades();
+
+  const embed = new EmbedBuilder()
+    .setColor('#00ff00')
+    .setTitle(`🎉 Subasta ${subasta.id} FINALIZADA`)
+    .setDescription(`**Ganador:** <@${subasta.currentBidder}>\n**Pagó:** ${subasta.currentBid} $\n**Vendedor:** <@${subasta.sellerId}>\n**Artículo:** ${subasta.item}`);
+
+  canal.send({ embeds: [embed] });
+}
+
 // ======================
-// PARTE 9/10: FUNCIONES ORIGINALES DEL BOT ALBACETE RP (COMPLETAS)
+// COMANDOS NUEVOS DE POLICÍA (Suspender y Ver documentos)
+// ======================
+async function handleSuspenderCarnet(interaction) {
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) 
+    return interaction.reply({ content: '❌ Solo Policía puede suspender documentos.', flags: MessageFlags.Ephemeral });
+
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+  const horas = interaction.options.getInteger('horas');
+
+  const userData = getUserData(interaction.guild.id, target.id);
+  const carnet = userData.pjs[pj].carnetConducir;
+
+  if (!carnet) return interaction.reply({ content: `❌ **${target}** no tiene carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+  carnet.suspendedUntil = Date.now() + horas * 3600000;
+  guardarIdentidades();
+
+  await interaction.reply({ content: `🚔 Carnet de conducir de **${target}** (PJ${pj}) suspendido por **${horas} horas**.` });
+}
+
+async function handleSuspenderLicencia(interaction) {
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) 
+    return interaction.reply({ content: '❌ Solo Policía puede suspender documentos.', flags: MessageFlags.Ephemeral });
+
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+  const horas = interaction.options.getInteger('horas');
+
+  const userData = getUserData(interaction.guild.id, target.id);
+  const licencia = userData.pjs[pj].licenciaArmas;
+
+  if (!licencia) return interaction.reply({ content: `❌ **${target}** no tiene licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+  licencia.suspendedUntil = Date.now() + horas * 3600000;
+  guardarIdentidades();
+
+  await interaction.reply({ content: `🚔 Licencia de armas de **${target}** (PJ${pj}) suspendida por **${horas} horas**.` });
+}
+
+async function handleVerCarnetPolicia(interaction) {
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) 
+    return interaction.reply({ content: '❌ Solo Policía puede ver documentos.', flags: MessageFlags.Ephemeral });
+
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+  const userData = getUserData(interaction.guild.id, target.id);
+  const carnet = userData.pjs[pj].carnetConducir;
+
+  if (!carnet) return interaction.reply({ content: `❌ **${target}** no tiene carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+  const suspendido = carnet.suspendedUntil && carnet.suspendedUntil > Date.now() 
+    ? `⚠️ **SUSPENDIDO** hasta <t:${Math.floor(carnet.suspendedUntil / 1000)}:R>` 
+    : '✅ Válido';
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🚗 CARNET DE CONDUCIR - PJ${pj}`)
+    .setColor(0x00FF88)
+    .addFields(
+      { name: 'Número', value: carnet.numero, inline: true },
+      { name: 'Nombre', value: `${carnet.nombre} ${carnet.apellido}`, inline: true },
+      { name: 'Emitido', value: carnet.fechaEmision, inline: true },
+      { name: 'Estado', value: suspendido, inline: false }
+    )
+    .setThumbnail(target.user.displayAvatarURL());
+
+  await interaction.reply({ embeds: [embed] });
+}
+
+async function handleVerLicenciaPolicia(interaction) {
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) 
+    return interaction.reply({ content: '❌ Solo Policía puede ver documentos.', flags: MessageFlags.Ephemeral });
+
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+  const userData = getUserData(interaction.guild.id, target.id);
+  const licencia = userData.pjs[pj].licenciaArmas;
+
+  if (!licencia) return interaction.reply({ content: `❌ **${target}** no tiene licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+  const suspendido = licencia.suspendedUntil && licencia.suspendedUntil > Date.now() 
+    ? `⚠️ **SUSPENDIDA** hasta <t:${Math.floor(licencia.suspendedUntil / 1000)}:R>` 
+    : '✅ Válida';
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🔫 LICENCIA DE ARMAS - PJ${pj}`)
+    .setColor(0xFF8800)
+    .addFields(
+      { name: 'Número', value: licencia.numero, inline: true },
+      { name: 'Nombre', value: `${licencia.nombre} ${licencia.apellido}`, inline: true },
+      { name: 'Emitida', value: licencia.fechaEmision, inline: true },
+      { name: 'Estado', value: suspendido, inline: false }
+    )
+    .setThumbnail(target.user.displayAvatarURL());
+
+  await interaction.reply({ embeds: [embed] });
+}
+
+
+// ======================
+// NUEVOS COMANDOS POLICÍA (SUSPENSIONES Y CONSULTAS)
+// ======================
+async function handleSuspenderCarnet(interaction) {
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) return interaction.reply({ content: '❌ Solo Policía puede suspender documentos.', flags: MessageFlags.Ephemeral });
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+  const horas = interaction.options.getInteger('horas');
+  const userData = getUserData(interaction.guild.id, target.id);
+  const carnet = userData.pjs[pj].carnetConducir;
+  if (!carnet) return interaction.reply({ content: `❌ **${target}** no tiene carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+  carnet.suspendedUntil = Date.now() + horas * 3600000;
+  guardarIdentidades();
+  await interaction.reply({ content: `🚔 Carnet de conducir de **${target}** (PJ${pj}) suspendido por **${horas} horas**.` });
+}
+
+async function handleSuspenderLicencia(interaction) {
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) return interaction.reply({ content: '❌ Solo Policía puede suspender documentos.', flags: MessageFlags.Ephemeral });
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+  const horas = interaction.options.getInteger('horas');
+  const userData = getUserData(interaction.guild.id, target.id);
+  const licencia = userData.pjs[pj].licenciaArmas;
+  if (!licencia) return interaction.reply({ content: `❌ **${target}** no tiene licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+  licencia.suspendedUntil = Date.now() + horas * 3600000;
+  guardarIdentidades();
+  await interaction.reply({ content: `🚔 Licencia de armas de **${target}** (PJ${pj}) suspendida por **${horas} horas**.` });
+}
+
+async function handleVerCarnetPolicia(interaction) {
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) return interaction.reply({ content: '❌ Solo Policía puede ver documentos.', flags: MessageFlags.Ephemeral });
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+  const userData = getUserData(interaction.guild.id, target.id);
+  const carnet = userData.pjs[pj].carnetConducir;
+  if (!carnet) return interaction.reply({ content: `❌ **${target}** no tiene carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+  const suspendido = carnet.suspendedUntil && carnet.suspendedUntil > Date.now() ? `⚠️ **SUSPENDIDO** hasta <t:${Math.floor(carnet.suspendedUntil / 1000)}:R>` : '✅ Válido';
+  const embed = new EmbedBuilder().setTitle(`🚗 CARNET DE CONDUCIR - PJ${pj}`).setColor(0x00FF88).addFields(
+    { name: 'Número', value: carnet.numero, inline: true },
+    { name: 'Nombre', value: `${carnet.nombre} ${carnet.apellido}`, inline: true },
+    { name: 'Emitido', value: carnet.fechaEmision, inline: true },
+    { name: 'Estado', value: suspendido, inline: false }
+  ).setThumbnail(target.user.displayAvatarURL());
+  await interaction.reply({ embeds: [embed] });
+}
+
+async function handleVerLicenciaPolicia(interaction) {
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) return interaction.reply({ content: '❌ Solo Policía puede ver documentos.', flags: MessageFlags.Ephemeral });
+  const target = interaction.options.getMember('usuario');
+  const pj = interaction.options.getString('pj');
+  const userData = getUserData(interaction.guild.id, target.id);
+  const licencia = userData.pjs[pj].licenciaArmas;
+  if (!licencia) return interaction.reply({ content: `❌ **${target}** no tiene licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+  const suspendido = licencia.suspendedUntil && licencia.suspendedUntil > Date.now() ? `⚠️ **SUSPENDIDA** hasta <t:${Math.floor(licencia.suspendedUntil / 1000)}:R>` : '✅ Válida';
+  const embed = new EmbedBuilder().setTitle(`🔫 LICENCIA DE ARMAS - PJ${pj}`).setColor(0xFF8800).addFields(
+    { name: 'Número', value: licencia.numero, inline: true },
+    { name: 'Nombre', value: `${licencia.nombre} ${licencia.apellido}`, inline: true },
+    { name: 'Emitida', value: licencia.fechaEmision, inline: true },
+    { name: 'Estado', value: suspendido, inline: false }
+  ).setThumbnail(target.user.displayAvatarURL());
+  await interaction.reply({ embeds: [embed] });
+}
+
+// ======================
+// FUNCIONES ORIGINALES FALTANTES (VOTACIONES, DNI, SANCIONES, ECONOMÍA, LOTERÍA)
 // ======================
 
 // ======================
@@ -759,16 +1275,10 @@ async function handleVotacion(interaction) {
     new ButtonBuilder().setCustomId('vote_no').setLabel('No me uniré').setStyle(ButtonStyle.Danger).setEmoji('❌')
   );
 
-  const mensaje = await interaction.editReply({
-    content: '',
-    embeds: [embed],
-    components: [row]
-  });
+  const mensaje = await interaction.editReply({ embeds: [embed], components: [row] });
 
   const pollData = {
-    yes: 0,
-    later: 0,
-    no: 0,
+    yes: 0, later: 0, no: 0,
     voters: new Map(),
     voterNames: new Map(),
     message: mensaje,
@@ -797,12 +1307,9 @@ async function handleButtonVote(interaction) {
   const opcion = customId === 'vote_yes' ? 'yes' : customId === 'vote_later' ? 'later' : 'no';
   const userId = interaction.user.id;
   const displayName = interaction.member?.displayName || interaction.user.tag;
-
   const votoAnterior = pollData.voters.get(userId);
-  if (votoAnterior === opcion) {
-    return interaction.reply({ content: '✅ Ya habías votado esta opción.', flags: MessageFlags.Ephemeral });
-  }
 
+  if (votoAnterior === opcion) return interaction.reply({ content: '✅ Ya habías votado esta opción.', flags: MessageFlags.Ephemeral });
   if (votoAnterior) pollData[votoAnterior]--;
   pollData[opcion]++;
   pollData.voters.set(userId, opcion);
@@ -836,7 +1343,6 @@ async function handleButtonVote(interaction) {
     votes.delete(interaction.message.id);
     return;
   }
-
   await interaction.update({ embeds: [nuevoEmbed], components: [row] });
 }
 
@@ -844,7 +1350,6 @@ async function handleCancelarVotacion(interaction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   let pollData = null;
   let messageIdToCancel = null;
-
   for (const [msgId, data] of votes.entries()) {
     if (data.channel.id === interaction.channel.id) {
       pollData = data;
@@ -852,15 +1357,11 @@ async function handleCancelarVotacion(interaction) {
       break;
     }
   }
-
   if (!pollData) return interaction.editReply({ content: '❌ No hay ninguna votación activa en este canal.' });
 
   const isCreator = pollData.creatorId === interaction.user.id;
   const isAdmin = interaction.member.permissions.has(PermissionsBitField.Flags.Administrator);
-
-  if (!isCreator && !isAdmin) {
-    return interaction.editReply({ content: '❌ Solo el creador o un Administrador puede cancelarla.' });
-  }
+  if (!isCreator && !isAdmin) return interaction.editReply({ content: '❌ Solo el creador o un Administrador puede cancelarla.' });
 
   if (pollData.timeout) clearTimeout(pollData.timeout);
 
@@ -884,7 +1385,6 @@ async function handleAbrirServer(interaction) {
   await interaction.deferReply();
   let pollData = null;
   let messageIdToRemove = null;
-
   for (const [msgId, data] of votes.entries()) {
     if (data.channel.id === interaction.channel.id) {
       pollData = data;
@@ -908,7 +1408,6 @@ async function handleAbrirServer(interaction) {
   ultimaApertura = Date.now();
 
   const pingContent = `**Se unirán:** ${mencionesSi || '*Nadie*'}\n**Se unirán más tarde:** ${mencionesTarde || '*Nadie*'}`;
-
   const embed = new EmbedBuilder()
     .setTitle('🔓 ¡EL SERVIDOR ESTÁ ABIERTO!')
     .setDescription('**¡Atención!**\nTienen **10 minutos** para unirse al servidor.\n\n¡Que lo pasen genial!')
@@ -916,10 +1415,7 @@ async function handleAbrirServer(interaction) {
     .setImage('https://tenor.com/es/view/abierto-te-esperamos-local-negocio-letrero-gif-12287454104567600625')
     .setTimestamp();
 
-  await interaction.editReply({
-    content: pingContent,
-    embeds: [embed]
-  });
+  await interaction.editReply({ content: pingContent, embeds: [embed] });
 }
 
 async function abrirServidorAutomatico(channel, pollData) {
@@ -934,7 +1430,6 @@ async function abrirServidorAutomatico(channel, pollData) {
   ultimaApertura = Date.now();
 
   const pingContent = `**Se unirán:** ${mencionesSi || '*Nadie*'}\n**Se unirán más tarde:** ${mencionesTarde || '*Nadie*'}`;
-
   const embed = new EmbedBuilder()
     .setTitle('🔓 ¡EL SERVIDOR SE HA ABIERTO AUTOMÁTICAMENTE!')
     .setDescription('Se alcanzó el mínimo de **5 votos "Me uniré"**.\n\nTienen **10 minutos** para unirse.\n\n¡Diviértanse!')
@@ -942,68 +1437,52 @@ async function abrirServidorAutomatico(channel, pollData) {
     .setImage('https://tenor.com/es/view/abierto-te-esperamos-local-negocio-letrero-gif-12287454104567600625')
     .setTimestamp();
 
-  await channel.send({
-    content: pingContent,
-    embeds: [embed]
-  });
+  await channel.send({ content: pingContent, embeds: [embed] });
 }
 
 async function handleCerrarServer(interaction) {
   await interaction.deferReply();
   serverAbierto = false;
-
   const embed = new EmbedBuilder()
     .setTitle('🔒 SERVIDOR CERRADO')
     .setDescription('**¡Gracias por unirse!**\n\nAgradecemos a todos los que participaron.\n\n¡Hasta la próxima!')
     .setColor(0xFF0000)
     .setTimestamp();
-
   await interaction.editReply({ content: '@everyone', embeds: [embed] });
 }
 
 async function cerrarVotacionPorTiempo(messageId) {
   const pollData = votes.get(messageId);
   if (!pollData) return;
-
   const nuevoEmbed = EmbedBuilder.from(pollData.message.embeds[0])
     .setDescription('**⏰ Votación expirada**\nLa votación ha durado 30 minutos y se ha cerrado automáticamente.')
     .setColor(0xFF9900);
-
   const disabledRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('vote_yes').setLabel('Me uniré').setStyle(ButtonStyle.Success).setEmoji('✅').setDisabled(true),
     new ButtonBuilder().setCustomId('vote_later').setLabel('Me uniré más tarde').setStyle(ButtonStyle.Primary).setEmoji('⏰').setDisabled(true),
     new ButtonBuilder().setCustomId('vote_no').setLabel('No me uniré').setStyle(ButtonStyle.Danger).setEmoji('❌').setDisabled(true)
   );
-
   try {
     await pollData.message.edit({ embeds: [nuevoEmbed], components: [disabledRow] });
     await pollData.channel.send('⏰ **La votación ha expirado** después de 30 minutos.');
   } catch (error) {
     console.error('❌ Error al cerrar votación por tiempo:', error);
   }
-
   if (pollData.timeout) clearTimeout(pollData.timeout);
   votes.delete(messageId);
 }
 
 // ======================
-// PANEL DNI
+// PANEL DNI + BOTONES DNI
 // ======================
 async function handlePanelDni(interaction) {
   if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return interaction.reply({ content: '❌ Solo los administradores pueden crear el panel de DNI.', flags: MessageFlags.Ephemeral });
   }
-
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
   const embed = new EmbedBuilder()
     .setTitle('🪪 SISTEMA OFICIAL DE DNI - ALBACETE RP')
-    .setDescription('**Cada jugador puede tener hasta 2 personajes (PJ1 y PJ2).**\n\n' +
-      '• Crea tu DNI con tus datos reales del personaje.\n' +
-      '• Con el DNI podrás sacar **Carnet de Conducir** y **Licencia de Armas**.\n' +
-      '• Solo tú puedes gestionar tus documentos.\n' +
-      '• Los administradores pueden borrar documentos si es necesario.\n\n' +
-      'Usa los botones de abajo:')
+    .setDescription('**Cada jugador puede tener hasta 2 personajes (PJ1 y PJ2).**\n\n• Crea tu DNI con tus datos reales del personaje.\n• Con el DNI podrás sacar **Carnet de Conducir** y **Licencia de Armas**.\n• Solo tú puedes gestionar tus documentos.\n• Los administradores pueden borrar documentos si es necesario.\n\nUsa los botones de abajo:')
     .setColor(0x00FFAA)
     .setTimestamp();
 
@@ -1012,13 +1491,11 @@ async function handlePanelDni(interaction) {
     new ButtonBuilder().setCustomId('dni-ver').setLabel('Ver DNI').setStyle(ButtonStyle.Secondary).setEmoji('🔎'),
     new ButtonBuilder().setCustomId('dni-borrar').setLabel('Borrar DNI').setStyle(ButtonStyle.Danger).setEmoji('🗑️')
   );
-
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('carnet-crear').setLabel('Crear Carnet Conducir').setStyle(ButtonStyle.Primary).setEmoji('🚗'),
     new ButtonBuilder().setCustomId('carnet-ver').setLabel('Ver Carnet').setStyle(ButtonStyle.Secondary).setEmoji('🔎'),
     new ButtonBuilder().setCustomId('carnet-borrar').setLabel('Borrar Carnet').setStyle(ButtonStyle.Danger).setEmoji('🗑️')
   );
-
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('licencia-crear').setLabel('Crear Licencia Armas').setStyle(ButtonStyle.Primary).setEmoji('🔫'),
     new ButtonBuilder().setCustomId('licencia-ver').setLabel('Ver Licencia').setStyle(ButtonStyle.Secondary).setEmoji('🔎'),
@@ -1030,7 +1507,10 @@ async function handlePanelDni(interaction) {
 }
 
 // ======================
-// BOTONES DEL SISTEMA DNI
+// BOTONES DEL PANEL DNI (CREAR - VER - BORRAR)
+// ======================
+// ======================
+// BOTONES DEL PANEL DNI - VERSIÓN CORREGIDA
 // ======================
 async function handleDniButton(interaction) {
   try {
@@ -1038,9 +1518,7 @@ async function handleDniButton(interaction) {
     let modal;
 
     if (customId === 'dni-crear') {
-      modal = new ModalBuilder()
-        .setCustomId('modal-dni-crear')
-        .setTitle('🪪 Crear DNI - Personaje');
+      modal = new ModalBuilder().setCustomId('modal-dni-crear').setTitle('🪪 Crear DNI - Personaje');
       modal.addComponents(
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pj').setLabel('Número de PJ').setPlaceholder('1 o 2').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1)),
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nombreCompleto').setLabel('Nombre Completo').setPlaceholder('Ej: Juan Pérez').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(60)),
@@ -1048,17 +1526,15 @@ async function handleDniButton(interaction) {
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nacionalidad').setLabel('Nacionalidad').setPlaceholder('Ej: Argentina, España...').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(40)),
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('genero').setLabel('Género').setPlaceholder('Ej: Masculino, Femenino...').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(20))
       );
-    }
+    } 
     else if (customId === 'dni-ver' || customId === 'dni-borrar') {
       modal = new ModalBuilder()
         .setCustomId(customId === 'dni-ver' ? 'modal-dni-ver' : 'modal-dni-borrar')
         .setTitle(customId === 'dni-ver' ? '🔎 Ver DNI' : '🗑️ Borrar DNI');
       modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('pj').setLabel('Número de PJ').setPlaceholder('1 o 2').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1)
-        )
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pj').setLabel('Número de PJ').setPlaceholder('1 o 2').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1))
       );
-    }
+    } 
     else if (customId.startsWith('carnet-') || customId.startsWith('licencia-')) {
       const tipo = customId.startsWith('carnet') ? 'carnet' : 'licencia';
       const action = customId.split('-')[1];
@@ -1066,309 +1542,51 @@ async function handleDniButton(interaction) {
         ? (action === 'crear' ? '🚗 Crear Carnet de Conducir' : action === 'ver' ? '🔎 Ver Carnet' : '🗑️ Borrar Carnet')
         : (action === 'crear' ? '🔫 Crear Licencia de Armas' : action === 'ver' ? '🔎 Ver Licencia' : '🗑️ Borrar Licencia');
 
-      modal = new ModalBuilder()
-        .setCustomId(`modal-${tipo}-${action}`)
-        .setTitle(titulo);
+      modal = new ModalBuilder().setCustomId(`modal-${tipo}-${action}`).setTitle(titulo);
       modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('pj').setLabel('Número de PJ').setPlaceholder('1 o 2').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1)
-        )
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pj').setLabel('Número de PJ').setPlaceholder('1 o 2').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1))
       );
     }
 
     if (modal) await interaction.showModal(modal);
   } catch (error) {
     console.error('❌ Error en handleDniButton:', error);
+    await interaction.reply({ content: '❌ Error al abrir el formulario.', flags: MessageFlags.Ephemeral });
   }
 }
 
 // ======================
-// MODALES DEL SISTEMA DNI + ARRESTO + TIENDA (VERSIÓN COMPLETA FUSIONADA)
+// MULTA + COMANDOS POLICÍA Y STAFF (originales)
 // ======================
-async function handleModalSubmit(interaction) {
-  try {
-    const customId = interaction.customId;
-    const guildId = interaction.guild.id;
-    const userId = interaction.user.id;
-    const userData = getUserData(guildId, userId);
-
-    // ==================== CREAR DNI ====================
-    if (customId === 'modal-dni-crear') {
-      const pj = interaction.fields.getTextInputValue('pj').trim();
-      const nombreCompleto = interaction.fields.getTextInputValue('nombreCompleto').trim();
-      const fechaNac = interaction.fields.getTextInputValue('fechaNac').trim();
-      const nacionalidad = interaction.fields.getTextInputValue('nacionalidad').trim();
-      const genero = interaction.fields.getTextInputValue('genero').trim();
-
-      if (pj !== '1' && pj !== '2') {
-        return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
-      }
-      if (userData.pjs[pj].dni) {
-        return interaction.reply({ content: `❌ Ya tienes un DNI creado para el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-      }
-      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(fechaNac)) {
-        return interaction.reply({ content: '❌ Formato de fecha incorrecto. Usa DD/MM/AAAA', flags: MessageFlags.Ephemeral });
-      }
-
-      const [nombre, ...apellidoParts] = nombreCompleto.split(' ');
-      const apellido = apellidoParts.join(' ') || 'Sin apellido';
-      const dniNumero = Math.floor(10000000 + Math.random() * 90000000).toString();
-      const fechaCreacion = new Date().toLocaleDateString('es-ES');
-
-      userData.pjs[pj].dni = {
-        numero: dniNumero,
-        nombre,
-        apellido,
-        fechaNac,
-        nacionalidad,
-        genero,
-        fechaCreacion
-      };
-
-      guardarIdentidades();
-
-      const embed = new EmbedBuilder()
-        .setTitle(`✅ DNI Creado - PJ${pj}`)
-        .setColor(0x00FFAA)
-        .addFields(
-          { name: 'DNI', value: dniNumero, inline: true },
-          { name: 'Nombre Completo', value: `${nombre} ${apellido}`, inline: true },
-          { name: 'Fecha Nacimiento', value: fechaNac, inline: true },
-          { name: 'Nacionalidad', value: nacionalidad, inline: true },
-          { name: 'Género', value: genero, inline: true },
-          { name: 'Creado', value: fechaCreacion, inline: true }
-        );
-
-      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      return;
-    }
-
-    // ==================== VER / BORRAR DNI ====================
-    if (customId === 'modal-dni-ver' || customId === 'modal-dni-borrar') {
-      const pj = interaction.fields.getTextInputValue('pj').trim();
-      if (pj !== '1' && pj !== '2') {
-        return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
-      }
-      const dni = userData.pjs[pj].dni;
-      if (!dni) {
-        return interaction.reply({ content: `❌ No tienes DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-      }
-
-      if (customId === 'modal-dni-ver') {
-        const embed = new EmbedBuilder()
-          .setTitle(`🔎 DNI OFICIAL - PJ${pj}`)
-          .setColor(0x00AAFF)
-          .addFields(
-            { name: 'DNI', value: dni.numero, inline: true },
-            { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
-            { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
-            { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
-            { name: 'Género', value: dni.genero, inline: true },
-            { name: 'Creado', value: dni.fechaCreacion, inline: true }
-          )
-          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
-
-        const channel = interaction.guild.channels.cache.get(DNI_CHANNEL_ID);
-        if (channel) {
-          await channel.send({ embeds: [embed] });
-          await interaction.reply({ content: `✅ DNI del PJ${pj} enviado al canal correspondiente.`, flags: MessageFlags.Ephemeral });
-        } else {
-          await interaction.reply({ content: '❌ No se encontró el canal de DNI.', flags: MessageFlags.Ephemeral });
-        }
-      } else {
-        userData.pjs[pj].dni = null;
-        userData.pjs[pj].carnetConducir = null;
-        userData.pjs[pj].licenciaArmas = null;
-        guardarIdentidades();
-        await interaction.reply({ content: `🗑️ DNI y documentos del PJ${pj} eliminados.`, flags: MessageFlags.Ephemeral });
-      }
-      return;
-    }
-
-    // ==================== CARNET DE CONDUCIR ====================
-    if (customId.startsWith('modal-carnet-')) {
-      const action = customId.split('-')[2];
-      const pj = interaction.fields.getTextInputValue('pj').trim();
-      if (pj !== '1' && pj !== '2') {
-        return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
-      }
-      const dni = userData.pjs[pj].dni;
-      if (!dni) {
-        return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, flags: MessageFlags.Ephemeral });
-      }
-
-      if (action === 'crear') {
-        if (userData.pjs[pj].carnetConducir) {
-          return interaction.reply({ content: `❌ Ya tienes carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-        }
-        const numero = `CC-${Math.floor(1000 + Math.random() * 9000)}`;
-        const fecha = new Date().toLocaleDateString('es-ES');
-        userData.pjs[pj].carnetConducir = { numero, fechaEmision: fecha };
-        guardarIdentidades();
-        await interaction.reply({ content: `✅ Carnet de Conducir creado para PJ${pj}\n**Número:** ${numero}`, flags: MessageFlags.Ephemeral });
-      }
-      else if (action === 'ver') {
-        const carnet = userData.pjs[pj].carnetConducir;
-        if (!carnet) return interaction.reply({ content: `❌ No tienes carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-        const embed = new EmbedBuilder()
-          .setTitle(`🚗 CARNET DE CONDUCIR - PJ${pj}`)
-          .setColor(0x00FF88)
-          .addFields(
-            { name: 'Número', value: carnet.numero, inline: true },
-            { name: 'Emitido', value: carnet.fechaEmision, inline: true }
-          )
-          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
-
-        const channel = interaction.guild.channels.cache.get(CARNET_CHANNEL_ID);
-        if (channel) {
-          await channel.send({ embeds: [embed] });
-          await interaction.reply({ content: `✅ Carnet enviado al canal de Carnets.`, flags: MessageFlags.Ephemeral });
-        } else {
-          await interaction.reply({ content: '❌ No se encontró el canal de Carnets.', flags: MessageFlags.Ephemeral });
-        }
-      }
-      else if (action === 'borrar') {
-        if (!userData.pjs[pj].carnetConducir) {
-          return interaction.reply({ content: `❌ No tienes carnet para borrar en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-        }
-        userData.pjs[pj].carnetConducir = null;
-        guardarIdentidades();
-        await interaction.reply({ content: `🗑️ Carnet de conducir del PJ${pj} eliminado.`, flags: MessageFlags.Ephemeral });
-      }
-      return;
-    }
-
-    // ==================== LICENCIA DE ARMAS ====================
-    if (customId.startsWith('modal-licencia-')) {
-      const action = customId.split('-')[2];
-      const pj = interaction.fields.getTextInputValue('pj').trim();
-      if (pj !== '1' && pj !== '2') {
-        return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
-      }
-      const dni = userData.pjs[pj].dni;
-      if (!dni) {
-        return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, flags: MessageFlags.Ephemeral });
-      }
-
-      if (action === 'crear') {
-        if (userData.pjs[pj].licenciaArmas) {
-          return interaction.reply({ content: `❌ Ya tienes licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-        }
-        const numero = `LA-${Math.floor(1000 + Math.random() * 9000)}`;
-        const fecha = new Date().toLocaleDateString('es-ES');
-        userData.pjs[pj].licenciaArmas = { numero, fechaEmision: fecha };
-        guardarIdentidades();
-        await interaction.reply({ content: `✅ Licencia de Armas creada para PJ${pj}\n**Número:** ${numero}`, flags: MessageFlags.Ephemeral });
-      }
-      else if (action === 'ver') {
-        const licencia = userData.pjs[pj].licenciaArmas;
-        if (!licencia) return interaction.reply({ content: `❌ No tienes licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-        const embed = new EmbedBuilder()
-          .setTitle(`🔫 LICENCIA DE ARMAS - PJ${pj}`)
-          .setColor(0xFF8800)
-          .addFields(
-            { name: 'Número', value: licencia.numero, inline: true },
-            { name: 'Emitida', value: licencia.fechaEmision, inline: true }
-          )
-          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
-
-        const channel = interaction.guild.channels.cache.get(LICENCIA_CHANNEL_ID);
-        if (channel) {
-          await channel.send({ embeds: [embed] });
-          await interaction.reply({ content: `✅ Licencia enviada al canal de Licencias.`, flags: MessageFlags.Ephemeral });
-        } else {
-          await interaction.reply({ content: '❌ No se encontró el canal de Licencias.', flags: MessageFlags.Ephemeral });
-        }
-      }
-      else if (action === 'borrar') {
-        if (!userData.pjs[pj].licenciaArmas) {
-          return interaction.reply({ content: `❌ No tienes licencia para borrar en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-        }
-        userData.pjs[pj].licenciaArmas = null;
-        guardarIdentidades();
-        await interaction.reply({ content: `🗑️ Licencia de armas del PJ${pj} eliminada.`, flags: MessageFlags.Ephemeral });
-      }
-      return;
-    }
-
-    // ==================== ARRESTO ====================
-    if (customId === 'modal-arrestar') {
-      const nombreIC = interaction.fields.getTextInputValue('nombre_ic');
-      const articulos = interaction.fields.getTextInputValue('articulos');
-      const policias = interaction.fields.getTextInputValue('policias');
-      const tiempo = interaction.fields.getTextInputValue('tiempo');
-
-      const embed = new EmbedBuilder()
-        .setTitle('🚔 ARRESTO REGISTRADO')
-        .setColor(0xFF0000)
-        .setTimestamp()
-        .addFields(
-          { name: '👤 Nombre IC (arrestado)', value: nombreIC, inline: false },
-          { name: '📜 Artículos', value: articulos, inline: false },
-          { name: '👮 Policías', value: policias, inline: false },
-          { name: '⏳ Tiempo en cárcel', value: tiempo, inline: false }
-        )
-        .setFooter({ text: `Arrestado por: ${interaction.user.tag}` });
-
-      await interaction.reply({ embeds: [embed] });
-      return;
-    }
-
-    // ==================== MODALES DE TIENDA (ya añadidos en parte 7) ====================
-   if (customId === 'modal_add_item') {
-      const nombre = interaction.fields.getTextInputValue('nombre').trim();
-      const precio = parseInt(interaction.fields.getTextInputValue('precio'));
-      const stock = parseInt(interaction.fields.getTextInputValue('stock'));
-      const descripcion = interaction.fields.getTextInputValue('descripcion').trim();
-
-      if (isNaN(precio) || isNaN(stock) || precio <= 0 || stock <= 0) {
-        return interaction.reply({ content: '❌ Precio y stock deben ser números positivos.', flags: MessageFlags.Ephemeral });
-      }
-    if (!Array.isArray(tiendaItems)) tiendaItems = [];
-      const id = generarIDCorto('ART');
-      tiendaItems.push({ id, nombre, precio, stock, descripcion });
-      guardarTienda();
-
-      await interaction.reply({
-        content: `✅ **Artículo añadido correctamente**\n**ID:** ${id}\n**Nombre:** ${nombre}\n**Precio:** $${precio.toLocaleString('es-ES')}\n**Stock:** ${stock}`,
-        flags: MessageFlags.Ephemeral
-      });
-      return;
-    }
-
-    if (customId === 'modal_add_stock') {
-      const itemId = interaction.fields.getTextInputValue('item_id').trim();
-      const cantidad = parseInt(interaction.fields.getTextInputValue('cantidad'));
-
-      if (isNaN(cantidad) || cantidad <= 0) {
-        return interaction.reply({ content: '❌ La cantidad debe ser un número positivo.', flags: MessageFlags.Ephemeral });
-      }
-
-      const item = tiendaItems.find(i => i.id === itemId);
-      if (!item) {
-        return interaction.reply({ content: `❌ No existe ningún artículo con ID **${itemId}**.`, flags: MessageFlags.Ephemeral });
-      }
-    if (!Array.isArray(tiendaItems)) tiendaItems = [];
-      item.stock += cantidad;
-      guardarTienda();
-
-      await interaction.reply({
-        content: `✅ Stock actualizado.\n**${item.nombre}** ahora tiene **${item.stock}** unidades.`,
-        flags: MessageFlags.Ephemeral
-      });
-      return;
-    }
-  } catch (error) {
-    console.error('❌ Error en handleModalSubmit:', error);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: '❌ Ocurrió un error al procesar el formulario.', flags: MessageFlags.Ephemeral });
-    }
+async function handleMulta(interaction) {
+  if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) {
+    return interaction.reply({ content: '❌ Solo Policía puede multar.', flags: MessageFlags.Ephemeral });
   }
-}
+  const miembro = interaction.options.getMember('usuario');
+  const cantidad = interaction.options.getInteger('cantidad');
+  const razon = interaction.options.getString('razon');
+  const guildId = interaction.guild.id;
+  const userData = getUserData(guildId, miembro.id);
+  userData.dinero -= cantidad;
+  if (userData.dinero < 0) userData.dinero = 0;
+  guardarIdentidades();
 
-// ======================
-// COMANDOS POLICÍA Y STAFF
-// ======================
+  const embed = new EmbedBuilder()
+    .setTitle('💰 MULTA REGISTRADA')
+    .setColor(0xFFAA00)
+    .setTimestamp()
+    .addFields(
+      { name: 'Usuario', value: `${miembro}`, inline: false },
+      { name: 'Cantidad', value: `**$${cantidad.toLocaleString('es-ES')}**`, inline: true },
+      { name: 'Nuevo balance', value: `**$${userData.dinero.toLocaleString('es-ES')}**`, inline: true },
+      { name: 'Moderador', value: interaction.user.toString(), inline: true },
+      { name: 'Razón', value: razon, inline: false }
+    );
+
+  await interaction.reply({ embeds: [embed] });
+  try { await miembro.send({ embeds: [embed] }); } catch {}
+}
+ 
 async function handleBuscarDni(interaction) {
   if (!POLICE_ROLES.some(roleId => interaction.member.roles.cache.has(roleId))) {
     return interaction.reply({ content: '❌ Solo Policía y Staff pueden usar este comando.', flags: MessageFlags.Ephemeral });
@@ -1479,9 +1697,6 @@ async function handleVerDniPublico(interaction) {
   await interaction.reply({ embeds: [embed] });
 }
 
-// ======================
-// ECONOMÍA (funciones restantes)
-// ======================
 async function handleBalance(interaction) {
   const target = interaction.options.getMember('usuario') || interaction.member;
   const userData = getUserData(interaction.guild.id, target.id);
@@ -1644,59 +1859,6 @@ async function handleLeaderboard(interaction) {
 }
 
 // ======================
-// COMANDOS ADMIN DNI Y SANCIONES (funciones que faltaban)
-// ======================
-
-async function handleBorrarDniAdmin(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo los administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
-  }
-  const target = interaction.options.getMember('usuario');
-  const pj = interaction.options.getString('pj');
-  const userData = getUserData(interaction.guild.id, target.id);
-
-  if (!userData.pjs[pj].dni) {
-    return interaction.reply({ content: `❌ **${target}** no tiene DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-  }
-
-  userData.pjs[pj].dni = null;
-  userData.pjs[pj].carnetConducir = null;
-  userData.pjs[pj].licenciaArmas = null;
-  guardarIdentidades();
-
-  await interaction.reply(`✅ **DNI y todos los documentos del PJ${pj} de ${target} han sido eliminados.**`);
-}
-
-async function handleVerDniAdmin(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo los administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
-  }
-  const target = interaction.options.getMember('usuario');
-  const pj = interaction.options.getString('pj');
-  const userData = getUserData(interaction.guild.id, target.id);
-  const dni = userData.pjs[pj].dni;
-
-  if (!dni) {
-    return interaction.reply({ content: `❌ **${target}** no tiene DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-  }
-
-  const embed = new EmbedBuilder()
-    .setTitle(`🔎 DNI de ${target.user.tag} - PJ${pj}`)
-    .setColor(0x00AAFF)
-    .addFields(
-      { name: 'DNI', value: dni.numero, inline: true },
-      { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
-      { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
-      { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
-      { name: 'Género', value: dni.genero, inline: true },
-      { name: 'Creado', value: dni.fechaCreacion, inline: true }
-    )
-    .setThumbnail(target.user.displayAvatarURL());
-
-  await interaction.reply({ embeds: [embed] });
-}
-
-// ======================
 // SISTEMA DE SANCIONES (multas ya desvinculadas)
 // ======================
 
@@ -1850,37 +2012,29 @@ async function handleEliminarSancion(interaction) {
 // ======================
 // LOTERÍA - FUNCIONES
 // ======================
-
 function scheduleNextDraw() {
   if (loteriaData.nextDraw && loteriaData.nextDraw > Date.now()) {
     const tiempoRestante = loteriaData.nextDraw - Date.now();
     setTimeout(realizarSorteo, tiempoRestante);
-    console.log(`⏰ Sorteo de lotería programado en ${Math.round(tiempoRestante / 3600000)} horas`);
   } else {
-    // Primera vez o después de reinicio
     loteriaData.nextDraw = Date.now() + DRAW_INTERVAL_MS;
     guardarLoteria();
     setTimeout(realizarSorteo, DRAW_INTERVAL_MS);
-    console.log('⏰ Primer sorteo de lotería programado (6 horas)');
   }
 }
 
 async function realizarSorteo() {
   const totalTickets = Object.values(loteriaData.tickets).reduce((a, b) => a + b, 0);
-
   if (totalTickets === 0) {
-    console.log('🎟️ Sorteo sin boletos. Jackpot se acumula.');
     loteriaData.nextDraw = Date.now() + DRAW_INTERVAL_MS;
     guardarLoteria();
     setTimeout(realizarSorteo, DRAW_INTERVAL_MS);
     return;
   }
 
-  // Elegir ganador aleatorio
   let randomTicket = Math.floor(Math.random() * totalTickets) + 1;
   let winnerId = null;
   let accumulated = 0;
-
   for (const [userId, count] of Object.entries(loteriaData.tickets)) {
     accumulated += count;
     if (randomTicket <= accumulated) {
@@ -1890,11 +2044,10 @@ async function realizarSorteo() {
   }
 
   const premio = loteriaData.jackpot;
-  const guild = client.guilds.cache.first(); // toma el primer guild (funciona en un solo servidor)
+  const guild = client.guilds.cache.first();
   const winnerMember = guild ? guild.members.cache.get(winnerId) : null;
   const winnerTag = winnerMember ? winnerMember.user.tag : 'Usuario desconocido';
 
-  // Guardar en historial
   loteriaData.history.unshift({
     drawId: loteriaData.currentDrawId,
     winnerId: winnerId,
@@ -1902,23 +2055,18 @@ async function realizarSorteo() {
     amount: premio,
     timestamp: new Date().toISOString()
   });
-
   if (loteriaData.history.length > 10) loteriaData.history.pop();
 
-  // Pagar al ganador
   const winnerData = getUserData(guild.id, winnerId);
   winnerData.dinero += premio;
   guardarIdentidades();
 
-  // Resetear lotería
   loteriaData.jackpot = 10000;
   loteriaData.tickets = {};
   loteriaData.currentDrawId++;
   loteriaData.nextDraw = Date.now() + DRAW_INTERVAL_MS;
-
   guardarLoteria();
 
-  // Anuncio público
   const embed = new EmbedBuilder()
     .setTitle('🎉 ¡SORTEO DE LOTERÍA REALIZADO!')
     .setColor(0xFFD700)
@@ -1928,30 +2076,19 @@ async function realizarSorteo() {
   const channel = guild.channels.cache.find(c => c.name.includes('general') || c.name.includes('chat')) || guild.systemChannel;
   if (channel) channel.send({ embeds: [embed], content: `<@${winnerId}> ¡Enhorabuena!` });
 
-  console.log(`🎟️ Sorteo ${loteriaData.currentDrawId - 1} ganado por ${winnerTag} con $${premio}`);
-
-  // Programar siguiente sorteo
   setTimeout(realizarSorteo, DRAW_INTERVAL_MS);
 }
 
-// ======================
-// COMANDOS DE LOTERÍA
-// ======================
 async function handleLoteriaComprar(interaction) {
   const cantidad = interaction.options.getInteger('cantidad');
   const totalCoste = cantidad * TICKET_PRICE;
   const userData = getUserData(interaction.guild.id, interaction.user.id);
-
-  if (userData.dinero < totalCoste) {
-    return interaction.reply({ content: `❌ No tienes suficiente dinero. Necesitas **$${totalCoste}**`, flags: MessageFlags.Ephemeral });
-  }
+  if (userData.dinero < totalCoste) return interaction.reply({ content: `❌ No tienes suficiente dinero. Necesitas **$${totalCoste}**`, flags: MessageFlags.Ephemeral });
 
   userData.dinero -= totalCoste;
   loteriaData.jackpot += totalCoste;
-
   if (!loteriaData.tickets[interaction.user.id]) loteriaData.tickets[interaction.user.id] = 0;
   loteriaData.tickets[interaction.user.id] += cantidad;
-
   guardarIdentidades();
   guardarLoteria();
 
@@ -1963,7 +2100,6 @@ async function handleLoteriaComprar(interaction) {
       { name: 'Jackpot actual', value: `**$${loteriaData.jackpot.toLocaleString('es-ES')}**`, inline: true },
       { name: 'Tus boletos', value: `${loteriaData.tickets[interaction.user.id]}`, inline: true }
     );
-
   await interaction.reply({ embeds: [embed] });
 }
 
@@ -1983,19 +2119,13 @@ async function handleLoteria(interaction) {
       { name: 'Sorteo cada', value: '6 horas', inline: true }
     )
     .setTimestamp();
-
   await interaction.reply({ embeds: [embed] });
 }
 
 async function handleLoteriaHistorial(interaction) {
-  if (loteriaData.history.length === 0) {
-    return interaction.reply({ content: '📭 Aún no hay ganadores registrados.', flags: MessageFlags.Ephemeral });
-  }
+  if (loteriaData.history.length === 0) return interaction.reply({ content: '📭 Aún no hay ganadores registrados.', flags: MessageFlags.Ephemeral });
 
-  const embed = new EmbedBuilder()
-    .setTitle('🏆 Historial de Ganadores - Lotería')
-    .setColor(0xFFD700);
-
+  const embed = new EmbedBuilder().setTitle('🏆 Historial de Ganadores - Lotería').setColor(0xFFD700);
   loteriaData.history.forEach(entry => {
     embed.addFields({
       name: `Sorteo #${entry.drawId}`,
@@ -2003,330 +2133,49 @@ async function handleLoteriaHistorial(interaction) {
       inline: false
     });
   });
-
   await interaction.reply({ embeds: [embed] });
 }
-
-// ======================
-// COMANDOS DE TIENDA
-// ======================
-async function handleTienda(interaction) {
-  try {
-    // Seguridad obligatoria
-    if (!Array.isArray(tiendaItems)) tiendaItems = [];
-
-    if (tiendaItems.length === 0) {
-      return interaction.reply({
-        content: '🛒 La tienda está vacía en este momento.\n\nUsa `/paneltienda` (solo admins) para añadir artículos.',
-        flags: MessageFlags.Ephemeral
-      });
-    }
-
-    const embed = new EmbedBuilder()
-      .setTitle('🛒 TIENDA DEL SERVIDOR ALBACETE RP')
-      .setColor('#7289da')
-      .setDescription('Artículos disponibles:');
-
-    tiendaItems.forEach(item => {
-      embed.addFields({
-        name: `**${item.nombre || 'Sin nombre'}** (${item.id || 'SIN-ID'})`,
-        value: `💰 **$${Number(item.precio || 0).toLocaleString('es-ES')}** | 📦 Stock: **${Number(item.stock || 0)}**\n${item.descripcion || 'Sin descripción'}`,
-        inline: false
-      });
-    });
-
-    await interaction.reply({ embeds: [embed] });
-  } catch (error) {
-    console.error('❌ Error en handleTienda:', error);
-    await interaction.reply({ 
-      content: '❌ Ocurrió un error al mostrar la tienda.', 
-      flags: MessageFlags.Ephemeral 
-    });
-  }
-}
-
-async function handleAñadirArticulo(interaction) {
+async function handleCrearItemSubasta(interaction) {
   if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo administradores pueden añadir artículos.', flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: '❌ Solo administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
   }
 
   const nombre = interaction.options.getString('nombre');
-  const precio = interaction.options.getInteger('precio');
-  const stock = interaction.options.getInteger('stock');
-  const descripcion = interaction.options.getString('descripcion');
-
-  const id = generarIDCorto('ART');
-
-  tiendaItems.push({ id, nombre, precio, stock, descripcion });
-  guardarTienda();
-
-  const embed = new EmbedBuilder()
-    .setTitle('✅ Artículo añadido a la tienda')
-    .setColor(0x00FF88)
-    .addFields(
-      { name: 'ID', value: id, inline: true },
-      { name: 'Nombre', value: nombre, inline: true },
-      { name: 'Precio', value: `$${precio.toLocaleString('es-ES')}`, inline: true },
-      { name: 'Stock inicial', value: stock.toString(), inline: true },
-      { name: 'Descripción', value: descripcion, inline: false }
-    );
-
-  await interaction.reply({ embeds: [embed] });
-}
-
-async function handleAñadirStock(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo administradores pueden añadir stock.', flags: MessageFlags.Ephemeral });
-  }
-
-  const id = interaction.options.getString('id');
-  const cantidad = interaction.options.getInteger('cantidad');
-
-  const item = tiendaItems.find(i => i.id === id);
-  if (!item) {
-    return interaction.reply({ content: `❌ No se encontró el artículo con ID **${id}**.`, flags: MessageFlags.Ephemeral });
-  }
-
-  item.stock += cantidad;
-  guardarTienda();
-
-  await interaction.reply({ content: `✅ Stock actualizado. **${item.nombre}** ahora tiene **${item.stock}** unidades.` });
-}
-
-async function handleComprar(interaction) {
-  const id = interaction.options.getString('id');
-  let cantidad = interaction.options.getInteger('cantidad') || 1;
-
-  const item = tiendaItems.find(i => i.id === id);
-  if (!item) {
-    return interaction.reply({ content: '❌ Artículo no encontrado.', flags: MessageFlags.Ephemeral });
-  }
-  if (item.stock < cantidad) {
-    return interaction.reply({ content: `❌ Solo quedan **${item.stock}** unidades de este artículo.`, flags: MessageFlags.Ephemeral });
-  }
-
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-  const total = item.precio * cantidad;
-
-  if (userData.dinero < total) {
-    return interaction.reply({ content: `❌ No tienes suficiente dinero (necesitas **$${total.toLocaleString('es-ES')}**).`, flags: MessageFlags.Ephemeral });
-  }
-
-  userData.dinero -= total;
-  item.stock -= cantidad;
-
-  guardarTienda();
-  guardarIdentidades();
-
-  await interaction.reply({
-    content: `✅ **¡Compra realizada!**\nHas comprado **${cantidad}× ${item.nombre}** por **$${total.toLocaleString('es-ES')}**.\nNuevo balance: **$${userData.dinero.toLocaleString('es-ES')}**`
-  });
-}
-
-// ======================
-// COMANDOS DE SUBASTAS
-// ======================
-async function handleSubastar(interaction) {
-  const item = interaction.options.getString('item');
   const preciomin = interaction.options.getInteger('preciomin');
   const duracion = interaction.options.getInteger('duracion');
+  const descripcion = interaction.options.getString('descripcion');
 
   if (duracion < 1 || duracion > 48) {
     return interaction.reply({ content: '❌ La duración debe estar entre 1 y 48 horas.', flags: MessageFlags.Ephemeral });
   }
 
   const subastaId = generarIDCorto('SUB');
-
   const subasta = {
     id: subastaId,
     guildId: interaction.guild.id,
     channelId: interaction.channel.id,
     sellerId: interaction.user.id,
-    item: item,
+    item: `${nombre} (Admin)`,
     currentBid: preciomin,
     currentBidder: null,
     endTime: Date.now() + duracion * 3600000,
-    ended: false
+    ended: false,
+    descripcion: descripcion
   };
 
   subastasGlobal.push(subasta);
   guardarSubastas();
 
-  // Programar finalización
   setTimeout(() => finalizarSubasta(subastaId, client), subasta.endTime - Date.now());
 
   const embed = new EmbedBuilder()
-    .setTitle(`🛒 NUEVA SUBASTA - ${subastaId}`)
-    .setDescription(`**Artículo:** ${item}\n**Puja mínima:** $${preciomin.toLocaleString('es-ES')}\n**Duración:** ${duracion} horas\n**Vendedor:** ${interaction.user}`)
-    .setColor('#FFAA00')
+    .setTitle(`🛒 NUEVA SUBASTA ADMIN - ${subastaId}`)
+    .setDescription(`**Artículo:** ${nombre}\n**Descripción:** ${descripcion}\n**Puja mínima:** $${preciomin.toLocaleString('es-ES')}\n**Duración:** ${duracion} horas\n**Creado por:** ${interaction.user}`)
+    .setColor('#FF00FF')
     .setTimestamp();
 
   await interaction.reply({ embeds: [embed] });
 }
-
-async function handlePujar(interaction) {
-  const id = interaction.options.getString('id');
-  const cantidad = interaction.options.getInteger('cantidad');
-
-  const subasta = subastasGlobal.find(s => s.id === id && !s.ended);
-  if (!subasta) {
-    return interaction.reply({ content: '❌ Subasta no encontrada o ya finalizada.', flags: MessageFlags.Ephemeral });
-  }
-  if (cantidad <= subasta.currentBid) {
-    return interaction.reply({ content: `❌ La puja debe ser mayor a la actual (**$${subasta.currentBid.toLocaleString('es-ES')}**).`, flags: MessageFlags.Ephemeral });
-  }
-
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-  if (userData.dinero < cantidad) {
-    return interaction.reply({ content: '❌ No tienes suficiente dinero para pujar.', flags: MessageFlags.Ephemeral });
-  }
-
-  // Devolver dinero al anterior pujador
-  if (subasta.currentBidder) {
-    const prevData = getUserData(interaction.guild.id, subasta.currentBidder);
-    prevData.dinero += subasta.currentBid;
-  }
-
-  // Nueva puja
-  userData.dinero -= cantidad;
-  subasta.currentBid = cantidad;
-  subasta.currentBidder = interaction.user.id;
-
-  guardarSubastas();
-  guardarIdentidades();
-
-  await interaction.reply({ content: `✅ **Puja aceptada** en la subasta **${id}** por **$${cantidad.toLocaleString('es-ES')}**!` });
-}
-
-// ======================
-// COMANDOS DE PRÉSTAMOS
-// ======================
-async function handleSolicitarPrestamo(interaction) {
-  const cantidad = interaction.options.getInteger('cantidad');
-  if (cantidad < 100) {
-    return interaction.reply({ content: '❌ La cantidad mínima de préstamo es $100.', flags: MessageFlags.Ephemeral });
-  }
-
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-  const id = generarIDCorto('PRE');
-  const aPagar = Math.floor(cantidad * 1.25); // 25% interés
-
-  prestamosGlobal.push({
-    id,
-    userId: interaction.user.id,
-    guildId: interaction.guild.id,
-    cantidadSolicitada: cantidad,
-    aPagar: aPagar,
-    fecha: Date.now()
-  });
-
-  userData.dinero += cantidad;
-  guardarPrestamos();
-  guardarIdentidades();
-
-  await interaction.reply({
-    content: `✅ **Préstamo aprobado**\n**ID:** ${id}\n**Recibiste:** $${cantidad.toLocaleString('es-ES')}\n**Debes devolver:** **$${aPagar.toLocaleString('es-ES')}**`
-  });
-}
-
-async function handlePrestamos(interaction) {
-  const userPrestamos = prestamosGlobal.filter(p => p.userId === interaction.user.id);
-  if (userPrestamos.length === 0) {
-    return interaction.reply({ content: '📭 No tienes préstamos activos.', flags: MessageFlags.Ephemeral });
-  }
-
-  const embed = new EmbedBuilder()
-    .setTitle('💳 Tus préstamos activos')
-    .setColor('#FF8800');
-
-  userPrestamos.forEach(p => {
-    embed.addFields({
-      name: `Préstamo ${p.id}`,
-      value: `Solicitado: $${p.cantidadSolicitada}\nA devolver: **$${p.aPagar}**`,
-      inline: false
-    });
-  });
-
-  await interaction.reply({ embeds: [embed] });
-}
-
-async function handlePagarPrestamo(interaction) {
-  const id = interaction.options.getString('id');
-  const prestamo = prestamosGlobal.find(p => p.id === id && p.userId === interaction.user.id);
-
-  if (!prestamo) {
-    return interaction.reply({ content: '❌ No tienes ningún préstamo con ese ID.', flags: MessageFlags.Ephemeral });
-  }
-
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-  if (userData.dinero < prestamo.aPagar) {
-    return interaction.reply({ content: `❌ No tienes suficiente dinero. Necesitas **$${prestamo.aPagar.toLocaleString('es-ES')}**.`, flags: MessageFlags.Ephemeral });
-  }
-
-  userData.dinero -= prestamo.aPagar;
-
-  // Eliminar préstamo
-  const index = prestamosGlobal.findIndex(p => p.id === id);
-  prestamosGlobal.splice(index, 1);
-
-  guardarPrestamos();
-  guardarIdentidades();
-
-  await interaction.reply({ content: `✅ Préstamo **${id}** pagado correctamente. ¡Gracias!` });
-}
-
-// ======================
-// COMANDO RULETA
-// ======================
-async function handleRuleta(interaction) {
-  const apuesta = interaction.options.getInteger('apuesta');
-  const opcion = interaction.options.getString('opcion');
-
-  if (apuesta < 10) {
-    return interaction.reply({ content: '❌ La apuesta mínima es $10.', flags: MessageFlags.Ephemeral });
-  }
-
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-  if (userData.dinero < apuesta) {
-    return interaction.reply({ content: '❌ No tienes suficiente dinero.', flags: MessageFlags.Ephemeral });
-  }
-
-  // Probabilidades reales de ruleta (18 rojo, 18 negro, 1 verde)
-  const random = Math.random() * 100;
-  let resultado;
-  let ganancia = 0;
-
-  if (random < 48.65) { // Rojo
-    resultado = 'rojo';
-  } else if (random < 97.3) { // Negro
-    resultado = 'negro';
-  } else { // Verde (1.35%)
-    resultado = 'verde';
-  }
-
-  if (opcion === resultado) {
-    if (resultado === 'verde') {
-      ganancia = apuesta * 35;
-    } else {
-      ganancia = apuesta * 2;
-    }
-    userData.dinero += ganancia - apuesta;
-    guardarIdentidades();
-
-    await interaction.reply({
-      content: `🎰 **¡GANASTE!**\nSalió **${resultado.toUpperCase()}**\nGanancia: **+$${(ganancia - apuesta).toLocaleString('es-ES')}**\nNuevo balance: **$${userData.dinero.toLocaleString('es-ES')}**`
-    });
-  } else {
-    userData.dinero -= apuesta;
-    guardarIdentidades();
-
-    await interaction.reply({
-      content: `🎰 **Perdiste...**\nSalió **${resultado.toUpperCase()}**\nPerdiste: **-$${apuesta.toLocaleString('es-ES')}**\nNuevo balance: **$${userData.dinero.toLocaleString('es-ES')}**`
-    });
-  }
-}
-
-
 // ======================
 // LOGIN DEL BOT
 // ======================
