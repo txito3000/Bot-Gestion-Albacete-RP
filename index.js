@@ -973,19 +973,28 @@ async function handleModalSubmit(interaction) {
       else if (action === 'ver') {
         const carnet = userData.pjs[pj].carnetConducir;
         if (!carnet) return interaction.reply({ content: `❌ No tienes carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        
+        // CORRECCIÓN: Tomar nombre directo del DNI y revisar si está suspendido
+        const nombreReal = dni ? `${dni.nombre} ${dni.apellido}` : `${carnet.nombre} ${carnet.apellido}`;
+        const suspendido = carnet.suspendedUntil && carnet.suspendedUntil > Date.now() 
+            ? `⚠️ **SUSPENDIDO** hasta <t:${Math.floor(carnet.suspendedUntil / 1000)}:R>` 
+            : '✅ Válido';
+
         const embed = new EmbedBuilder()
           .setTitle(`🚗 CARNET DE CONDUCIR - PJ${pj}`)
           .setColor(0x00FF88)
           .addFields(
             { name: 'Número', value: carnet.numero, inline: true },
-            { name: 'Nombre', value: `${carnet.nombre} ${carnet.apellido}`, inline: true },
-            { name: 'Emitido', value: carnet.fechaEmision, inline: true }
+            { name: 'Nombre', value: nombreReal, inline: true },
+            { name: 'Emitido', value: carnet.fechaEmision, inline: true },
+            { name: 'Estado', value: suspendido, inline: false } // Añadido
           )
           .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
+
         const channel = interaction.guild.channels.cache.get(CARNET_CHANNEL_ID);
         if (channel) await channel.send({ embeds: [embed] });
         await interaction.reply({ content: `✅ Carnet enviado al canal de Carnets.`, flags: MessageFlags.Ephemeral });
-      } 
+      }
       else if (action === 'borrar') {
         if (!userData.pjs[pj].carnetConducir) return interaction.reply({ content: `❌ No tienes carnet para borrar en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
         userData.pjs[pj].carnetConducir = null;
@@ -1018,19 +1027,28 @@ async function handleModalSubmit(interaction) {
       else if (action === 'ver') {
         const licencia = userData.pjs[pj].licenciaArmas;
         if (!licencia) return interaction.reply({ content: `❌ No tienes licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+        // CORRECCIÓN: Tomar nombre directo del DNI y revisar si está suspendido
+        const nombreReal = dni ? `${dni.nombre} ${dni.apellido}` : `${licencia.nombre} ${licencia.apellido}`;
+        const suspendido = licencia.suspendedUntil && licencia.suspendedUntil > Date.now() 
+            ? `⚠️ **SUSPENDIDA** hasta <t:${Math.floor(licencia.suspendedUntil / 1000)}:R>` 
+            : '✅ Válida';
+
         const embed = new EmbedBuilder()
           .setTitle(`🔫 LICENCIA DE ARMAS - PJ${pj}`)
           .setColor(0xFF8800)
           .addFields(
             { name: 'Número', value: licencia.numero, inline: true },
-            { name: 'Nombre', value: `${licencia.nombre} ${licencia.apellido}`, inline: true },
-            { name: 'Emitida', value: licencia.fechaEmision, inline: true }
+            { name: 'Nombre', value: nombreReal, inline: true },
+            { name: 'Emitida', value: licencia.fechaEmision, inline: true },
+            { name: 'Estado', value: suspendido, inline: false } // Añadido
           )
           .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
+
         const channel = interaction.guild.channels.cache.get(LICENCIA_CHANNEL_ID);
         if (channel) await channel.send({ embeds: [embed] });
         await interaction.reply({ content: `✅ Licencia enviada al canal de Licencias.`, flags: MessageFlags.Ephemeral });
-      } 
+      }
       else if (action === 'borrar') {
         if (!userData.pjs[pj].licenciaArmas) return interaction.reply({ content: `❌ No tienes licencia para borrar en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
         userData.pjs[pj].licenciaArmas = null;
