@@ -251,7 +251,7 @@ function guardarLoteria() {
 // UTILIDADES
 // ======================
 function generarIDCorto(prefijo) {
-  return `${prefijo}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+  return `${prefijo}-${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
 // ======================
@@ -409,7 +409,7 @@ client.once(Events.ClientReady, async () => {
     new SlashCommandBuilder().setName('ruleta').setDescription('🎰 Jugar a la ruleta').addIntegerOption(opt => opt.setName('apuesta').setDescription('Cantidad a apostar (mín. 10)').setRequired(true)).addStringOption(opt => opt.setName('opcion').setDescription('Color').setRequired(true).addChoices({ name: '🔴 Rojo', value: 'rojo' }, { name: '⚫ Negro', value: 'negro' }, { name: '🟢 Verde', value: 'verde' })),
     new SlashCommandBuilder().setName('subastar').setDescription('🛒 Crear una subasta').addStringOption(opt => opt.setName('item').setDescription('Artículo a subastar').setRequired(true)).addIntegerOption(opt => opt.setName('preciomin').setDescription('Puja mínima').setRequired(true)).addIntegerOption(opt => opt.setName('duracion').setDescription('Duración en horas').setRequired(true)),
     new SlashCommandBuilder().setName('pujar').setDescription('🛒 Pujar en una subasta').addStringOption(opt => opt.setName('id').setDescription('ID de la subasta').setRequired(true)).addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad de la puja').setRequired(true)),
-    new SlashCommandBuilder().setName('solicitarprestamo').setDescription('💰 Solicitar un préstamo (interés 25%)').addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (mín. 100)').setRequired(true)),
+    new SlashCommandBuilder().setName('solicitarprestamo').setDescription('💰 Solicitar un préstamo (interés 25%)').addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (máx. 50,000)').setRequired(true).setMaxValue(50000)).addStringOption(opt => opt.setName('razon').setDescription('Razón del préstamo').setRequired(true)),
     new SlashCommandBuilder().setName('prestamos').setDescription('💳 Ver tus préstamos activos'),
     new SlashCommandBuilder().setName('pagarprestamo').setDescription('💳 Pagar un préstamo').addStringOption(opt => opt.setName('id').setDescription('ID del préstamo').setRequired(true)),
     new SlashCommandBuilder().setName('quitararticulo').setDescription('🔧 [ADMIN] Eliminar un artículo de la tienda').addStringOption(opt => opt.setName('id').setDescription('ID del artículo').setRequired(true)),
@@ -501,6 +501,8 @@ client.on(Events.InteractionCreate, async interaction => {
         await handleDniButton(interaction);
       } else if (['panel_add_item', 'panel_add_stock', 'panel_view_items'].includes(customId)) {
         await handlePanelTiendaButton(interaction);
+      } else if (customId.startsWith('prestamo_')) { // ESTO ES NUEVO
+        await handlePrestamoButton(interaction);
       } else {
         await handleButtonVote(interaction);
       }
@@ -739,57 +741,94 @@ async function finalizarSubasta(subastaId, clientParam) {
 // ======================
 async function handleSolicitarPrestamo(interaction) {
   const cantidad = interaction.options.getInteger('cantidad');
-  if (cantidad < 100) return interaction.reply({ content: '❌ La cantidad mínima de préstamo es $100.', flags: MessageFlags.Ephemeral });
+  const razon = interaction.options.getString('razon');
+  if (cantidad < 100) return interaction.reply({ content: '❌ La cantidad mínima es $100.', flags: MessageFlags.Ephemeral });
 
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
   const id = generarIDCorto('PRE');
   const aPagar = Math.floor(cantidad * 1.25);
 
+  // Se guarda como PENDIENTE y sin sumar el dinero aún
   prestamosGlobal.push({
-    id,
-    userId: interaction.user.id,
-    guildId: interaction.guild.id,
-    cantidadSolicitada: cantidad,
-    aPagar: aPagar,
-    fecha: Date.now()
+    id, userId: interaction.user.id, guildId: interaction.guild.id,
+    cantidadSolicitada: cantidad, aPagar: aPagar,
+    razon: razon, estado: 'pendiente', fecha: Date.now()
   });
-
-  userData.dinero += cantidad;
   guardarPrestamos();
-  guardarIdentidades();
 
-  await interaction.reply({
-    content: `✅ **Préstamo aprobado**\n**ID:** ${id}\n**Recibiste:** $${cantidad.toLocaleString('es-ES')}\n**Debes devolver:** **$${aPagar.toLocaleString('es-ES')}**`
-  });
+  const embed = new EmbedBuilder()
+    .setTitle('🏦 Solicitud de Préstamo Pendiente')
+    .setColor('#FFFF00')
+    .addFields(
+      { name: 'Usuario', value: `${interaction.user}`, inline: true },
+      { name: 'Cantidad', value: `$${cantidad.toLocaleString('es-ES')}`, inline: true },
+      { name: 'A Devolver', value: `$${aPagar.toLocaleString('es-ES')}`, inline: true },
+      { name: 'Razón', value: razon, inline: false }
+    )
+    .setFooter({ text: `ID: ${id} | Solo encargados de banco pueden aprobar/rechazar` });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`prestamo_aprobar_${id}`).setLabel('Aprobar').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`prestamo_rechazar_${id}`).setLabel('Rechazar').setStyle(ButtonStyle.Danger)
+  );
+
+  // Se envía al canal actual. Los encargados de banco lo verán ahí.
+  await interaction.reply({ content: '✅ Solicitud enviada. Espera a que un encargado la revise.', flags: MessageFlags.Ephemeral });
+  await interaction.channel.send({ embeds: [embed], components: [row] });
+}
+
+async function handlePrestamoButton(interaction) {
+  // Solo Administradores (Puedes cambiar PermissionsBitField.Flags.Administrator por tu ROL de banquero si prefieres)
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: '❌ Solo los encargados del banco pueden revisar préstamos.', flags: MessageFlags.Ephemeral });
+  }
+
+  const [, accion, id] = interaction.customId.split('_');
+  const prestamo = prestamosGlobal.find(p => p.id === id);
+
+  if (!prestamo || prestamo.estado !== 'pendiente') {
+      return interaction.reply({ content: '❌ Este préstamo ya fue procesado o no existe.', flags: MessageFlags.Ephemeral });
+  }
+
+  if (accion === 'aprobar') {
+      prestamo.estado = 'aprobado';
+      prestamo.fechaLimite = Date.now() + (30 * 24 * 60 * 60 * 1000); // Límite 1 mes
+      const userData = getUserData(prestamo.guildId, prestamo.userId);
+      userData.dinero += prestamo.cantidadSolicitada;
+      guardarIdentidades(); guardarPrestamos();
+
+      const embed = new EmbedBuilder(interaction.message.embeds[0].data)
+          .setColor('#00FF00').setTitle('✅ Préstamo Aprobado').addFields({ name: 'Vencimiento', value: `<t:${Math.floor(prestamo.fechaLimite / 1000)}:R>`, inline: false });
+      await interaction.update({ embeds: [embed], components: [] });
+  } else {
+      prestamo.estado = 'rechazado';
+      guardarPrestamos();
+      const embed = new EmbedBuilder(interaction.message.embeds[0].data).setColor('#FF0000').setTitle('❌ Préstamo Rechazado');
+      await interaction.update({ embeds: [embed], components: [] });
+  }
 }
 
 async function handlePrestamos(interaction) {
-  const userPrestamos = prestamosGlobal.filter(p => p.userId === interaction.user.id);
+  const userPrestamos = prestamosGlobal.filter(p => p.userId === interaction.user.id && p.estado === 'aprobado');
   if (userPrestamos.length === 0) return interaction.reply({ content: '📭 No tienes préstamos activos.', flags: MessageFlags.Ephemeral });
-
   const embed = new EmbedBuilder().setTitle('💳 Tus préstamos activos').setColor('#FF8800');
   userPrestamos.forEach(p => {
-    embed.addFields({ name: `Préstamo ${p.id}`, value: `Solicitado: $${p.cantidadSolicitada}\nA devolver: **$${p.aPagar}**`, inline: false });
+    embed.addFields({ name: `Préstamo ${p.id}`, value: `Solicitado: $${p.cantidadSolicitada}\nA devolver: **$${p.aPagar}**\nVence: <t:${Math.floor(p.fechaLimite/1000)}:R>`, inline: false });
   });
   await interaction.reply({ embeds: [embed] });
 }
 
 async function handlePagarPrestamo(interaction) {
   const id = interaction.options.getString('id');
-  const prestamo = prestamosGlobal.find(p => p.id === id && p.userId === interaction.user.id);
-  if (!prestamo) return interaction.reply({ content: '❌ No tienes ningún préstamo con ese ID.', flags: MessageFlags.Ephemeral });
-
+  const prestamo = prestamosGlobal.find(p => p.id === id && p.userId === interaction.user.id && p.estado === 'aprobado');
+  if (!prestamo) return interaction.reply({ content: '❌ No tienes ningún préstamo activo con ese ID.', flags: MessageFlags.Ephemeral });
   const userData = getUserData(interaction.guild.id, interaction.user.id);
   if (userData.dinero < prestamo.aPagar) return interaction.reply({ content: `❌ No tienes suficiente dinero. Necesitas **$${prestamo.aPagar.toLocaleString('es-ES')}**.`, flags: MessageFlags.Ephemeral });
-
   userData.dinero -= prestamo.aPagar;
   const index = prestamosGlobal.findIndex(p => p.id === id);
   prestamosGlobal.splice(index, 1);
-  guardarPrestamos();
-  guardarIdentidades();
+  guardarPrestamos(); guardarIdentidades();
   await interaction.reply({ content: `✅ Préstamo **${id}** pagado correctamente. ¡Gracias!` });
 }
-
 // ======================
 // PANEL TIENDA Y BOTONES
 // ======================
@@ -1253,6 +1292,9 @@ async function handleVerLicenciaPolicia(interaction) {
 // VOTACIONES
 // ======================
 async function handleVotacion(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator) && !interaction.member.roles.cache.some(r => r.name.toLowerCase().includes('staff'))) {
+      return interaction.reply({ content: '❌ Solo el Staff puede usar este comando.', flags: MessageFlags.Ephemeral });
+  }
   await interaction.deferReply();
   const embed = new EmbedBuilder()
     .setTitle('VOTACIÓN DE APERTURA DE SERVIDOR')
@@ -1347,6 +1389,9 @@ async function handleButtonVote(interaction) {
 }
 
 async function handleCancelarVotacion(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator) && !interaction.member.roles.cache.some(r => r.name.toLowerCase().includes('staff'))) {
+      return interaction.reply({ content: '❌ Solo el Staff puede usar este comando.', flags: MessageFlags.Ephemeral });
+  }
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   let pollData = null;
   let messageIdToCancel = null;
@@ -1382,6 +1427,9 @@ async function handleCancelarVotacion(interaction) {
 }
 
 async function handleAbrirServer(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator) && !interaction.member.roles.cache.some(r => r.name.toLowerCase().includes('staff'))) {
+      return interaction.reply({ content: '❌ Solo el Staff puede usar este comando.', flags: MessageFlags.Ephemeral });
+  }
   await interaction.deferReply();
   let pollData = null;
   let messageIdToRemove = null;
@@ -1441,6 +1489,9 @@ async function abrirServidorAutomatico(channel, pollData) {
 }
 
 async function handleCerrarServer(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator) && !interaction.member.roles.cache.some(r => r.name.toLowerCase().includes('staff'))) {
+      return interaction.reply({ content: '❌ Solo el Staff puede usar este comando.', flags: MessageFlags.Ephemeral });
+  }
   await interaction.deferReply();
   serverAbierto = false;
   const embed = new EmbedBuilder()
@@ -1568,7 +1619,6 @@ async function handleMulta(interaction) {
   const guildId = interaction.guild.id;
   const userData = getUserData(guildId, miembro.id);
   userData.dinero -= cantidad;
-  if (userData.dinero < 0) userData.dinero = 0;
   guardarIdentidades();
 
   const embed = new EmbedBuilder()
