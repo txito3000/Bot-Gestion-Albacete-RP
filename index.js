@@ -251,7 +251,7 @@ function guardarLoteria() {
 // UTILIDADES
 // ======================
 function generarIDCorto(prefijo) {
-  // Genera un ID tipo SUB-1234 o PRE-5678 (Mucho más fácil de escribir para los usuarios)
+  // Genera un ID corto de 4 números. Ej: SUB-4921 o PRE-1029
   return `${prefijo}-${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
@@ -327,7 +327,7 @@ function guardarIdentidades() {
   }
 }
 
-function getUserData(guildId, userId) {
+ffunction getUserData(guildId, userId) {
   if (!identidades[guildId]) identidades[guildId] = {};
   if (!identidades[guildId][userId]) {
     identidades[guildId][userId] = {
@@ -336,15 +336,16 @@ function getUserData(guildId, userId) {
         "2": { dni: null, carnetConducir: null, licenciaArmas: null }
       },
       dinero: 6000,
-      lastSalary: null
+      lastSalary: null,
+      drogas: { marihuana: 0, cocaina: 0 } // AÑADIDO PARA IDEA E
     };
   } else {
     if (typeof identidades[guildId][userId].dinero !== 'number') identidades[guildId][userId].dinero = 6000;
     if (!identidades[guildId][userId].lastSalary) identidades[guildId][userId].lastSalary = null;
+    if (!identidades[guildId][userId].drogas) identidades[guildId][userId].drogas = { marihuana: 0, cocaina: 0 }; // AÑADIDO
   }
   return identidades[guildId][userId];
 }
-
 // ======================
 // EVENTO READY
 // ======================
@@ -415,13 +416,16 @@ client.once(Events.ClientReady, async () => {
     new SlashCommandBuilder().setName('pagarprestamo').setDescription('💳 Pagar un préstamo').addStringOption(opt => opt.setName('id').setDescription('ID del préstamo').setRequired(true)),
     new SlashCommandBuilder().setName('quitararticulo').setDescription('🔧 [ADMIN] Eliminar un artículo de la tienda').addStringOption(opt => opt.setName('id').setDescription('ID del artículo').setRequired(true)),
     new SlashCommandBuilder().setName('crearitemsubasta').setDescription('🔧 [ADMIN] Crear artículo directamente para subasta (no va a la tienda)').addStringOption(opt => opt.setName('nombre').setDescription('Nombre del artículo').setRequired(true)).addIntegerOption(opt => opt.setName('preciomin').setDescription('Precio mínimo de puja').setRequired(true)).addIntegerOption(opt => opt.setName('duracion').setDescription('Duración en horas (1-48)').setRequired(true)).addStringOption(opt => opt.setName('descripcion').setDescription('Descripción').setRequired(true)),
-  
-
     // NUEVOS COMANDOS POLICÍA (suspensión y ver documentos)
     new SlashCommandBuilder().setName('suspender-carnet').setDescription('🚔 [Policía] Suspender carnet de conducir').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })).addIntegerOption(opt => opt.setName('horas').setDescription('Horas de suspensión (1-720)').setRequired(true).setMinValue(1).setMaxValue(720)),
     new SlashCommandBuilder().setName('suspender-licencia').setDescription('🚔 [Policía] Suspender licencia de armas').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })).addIntegerOption(opt => opt.setName('horas').setDescription('Horas de suspensión (1-720)').setRequired(true).setMinValue(1).setMaxValue(720)),
     new SlashCommandBuilder().setName('ver-carnet-policia').setDescription('🔍 [Policía] Ver carnet de conducir de cualquier usuario').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
-    new SlashCommandBuilder().setName('ver-licencia-policia').setDescription('🔍 [Policía] Ver licencia de armas de cualquier usuario').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' }))
+    new SlashCommandBuilder().setName('ver-licencia-policia').setDescription('🔍 [Policía] Ver licencia de armas de cualquier usuario').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
+    // Lista de morosos para el banco (Idea A)
+    new SlashCommandBuilder().setName('morosos').setDescription('🏦 [Banco] Ver lista de personas con préstamos vencidos'),
+    // Comandos de drogas (Idea E)
+    new SlashCommandBuilder().setName('procesar').setDescription('🌿 Procesar sustancias ilegales').addStringOption(opt => opt.setName('tipo').setDescription('Tipo de sustancia').setRequired(true).addChoices({ name: '🌿 Marihuana', value: 'marihuana' }, { name: '❄️ Cocaína', value: 'cocaina' })),
+    new SlashCommandBuilder().setName('vender-ilegal').setDescription('🕴️ Vender sustancias en el mercado negro').addStringOption(opt => opt.setName('tipo').setDescription('Tipo de sustancia a vender').setRequired(true).addChoices({ name: '🌿 Marihuana', value: 'marihuana' }, { name: '❄️ Cocaína', value: 'cocaina' })),
   ];
 
   for (const guild of client.guilds.cache.values()) {
@@ -492,6 +496,9 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'suspender-licencia': await handleSuspenderLicencia(interaction); break;
         case 'ver-carnet-policia': await handleVerCarnetPolicia(interaction); break;
         case 'ver-licencia-policia': await handleVerLicenciaPolicia(interaction); break;
+          case 'morosos': await handleMorosos(interaction); break;
+        case 'procesar': await handleProcesar(interaction); break;
+        case 'vender-ilegal': await handleVenderIlegal(interaction); break;
       }
       return;
     }
@@ -743,12 +750,18 @@ async function finalizarSubasta(subastaId, clientParam) {
 async function handleSolicitarPrestamo(interaction) {
   const cantidad = interaction.options.getInteger('cantidad');
   const razon = interaction.options.getString('razon');
-  if (cantidad < 100) return interaction.reply({ content: '❌ La cantidad mínima es $100.', flags: MessageFlags.Ephemeral });
+  if (cantidad < 100) return interaction.reply({ content: '❌ La cantidad mínima es 100€.', flags: MessageFlags.Ephemeral });
+
+  // IDEA A: SISTEMA DE LISTA NEGRA (MOROSOS)
+  const esMoroso = prestamosGlobal.some(p => p.userId === interaction.user.id && p.estado === 'aprobado' && p.fechaLimite < Date.now());
+  if (esMoroso) {
+      return interaction.reply({ content: '🚨 **ESTÁS EN LA LISTA NEGRA.**\nEl banco te ha denegado la solicitud porque tienes un préstamo vencido sin pagar.', flags: MessageFlags.Ephemeral });
+  }
 
   const id = generarIDCorto('PRE');
-  const aPagar = Math.floor(cantidad * 1.25);
+  const aPagar = Math.floor(cantidad * 1.25); // 25% de interés
 
-  // Se guarda como PENDIENTE y sin sumar el dinero aún
+  // Guardar como PENDIENTE. NO se suma el dinero aquí.
   prestamosGlobal.push({
     id, userId: interaction.user.id, guildId: interaction.guild.id,
     cantidadSolicitada: cantidad, aPagar: aPagar,
@@ -757,45 +770,49 @@ async function handleSolicitarPrestamo(interaction) {
   guardarPrestamos();
 
   const embed = new EmbedBuilder()
-    .setTitle('🏦 Solicitud de Préstamo Pendiente')
+    .setTitle('🏦 Nueva Solicitud de Préstamo')
     .setColor('#FFFF00')
     .addFields(
       { name: 'Usuario', value: `${interaction.user}`, inline: true },
-      { name: 'Cantidad', value: `$${cantidad.toLocaleString('es-ES')}`, inline: true },
-      { name: 'A Devolver', value: `$${aPagar.toLocaleString('es-ES')}`, inline: true },
+      { name: 'Cantidad', value: `${cantidad.toLocaleString('es-ES')}€`, inline: true },
+      { name: 'A Devolver', value: `${aPagar.toLocaleString('es-ES')}€`, inline: true },
       { name: 'Razón', value: razon, inline: false }
     )
-    .setFooter({ text: `ID: ${id} | Solo encargados de banco pueden aprobar/rechazar` });
+    .setFooter({ text: `ID: ${id} | Solo el rol Encargado puede aprobar` });
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`prestamo_aprobar_${id}`).setLabel('Aprobar').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(`prestamo_rechazar_${id}`).setLabel('Rechazar').setStyle(ButtonStyle.Danger)
   );
 
-  // Se envía al canal actual. Los encargados de banco lo verán ahí.
-  await interaction.reply({ content: '✅ Solicitud enviada. Espera a que un encargado la revise.', flags: MessageFlags.Ephemeral });
+  await interaction.reply({ content: '✅ Solicitud enviada al banco. Dinero retenido hasta aprobación.', flags: MessageFlags.Ephemeral });
   await interaction.channel.send({ embeds: [embed], components: [row] });
 }
 
 async function handlePrestamoButton(interaction) {
-  // Solo Administradores (Puedes cambiar PermissionsBitField.Flags.Administrator por tu ROL de banquero si prefieres)
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      return interaction.reply({ content: '❌ Solo los encargados del banco pueden revisar préstamos.', flags: MessageFlags.Ephemeral });
+  // ID DEL ROL DE ENCARGADOS QUE ME DISTE
+  const ENCARGADO_ROL = '1497936257219559455'; 
+  
+  if (!interaction.member.roles.cache.has(ENCARGADO_ROL) && !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: '❌ Solo los Encargados del Banco pueden aprobar préstamos.', flags: MessageFlags.Ephemeral });
   }
 
   const [, accion, id] = interaction.customId.split('_');
   const prestamo = prestamosGlobal.find(p => p.id === id);
 
   if (!prestamo || prestamo.estado !== 'pendiente') {
-      return interaction.reply({ content: '❌ Este préstamo ya fue procesado o no existe.', flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: '❌ Este préstamo ya fue procesado.', flags: MessageFlags.Ephemeral });
   }
 
   if (accion === 'aprobar') {
       prestamo.estado = 'aprobado';
-      prestamo.fechaLimite = Date.now() + (30 * 24 * 60 * 60 * 1000); // Límite 1 mes
+      prestamo.fechaLimite = Date.now() + (30 * 24 * 60 * 60 * 1000); // 30 días
+      
+      // AQUÍ SE DA EL DINERO AL APROBAR
       const userData = getUserData(prestamo.guildId, prestamo.userId);
       userData.dinero += prestamo.cantidadSolicitada;
-      guardarIdentidades(); guardarPrestamos();
+      guardarIdentidades(); 
+      guardarPrestamos();
 
       const embed = new EmbedBuilder(interaction.message.embeds[0].data)
           .setColor('#00FF00').setTitle('✅ Préstamo Aprobado').addFields({ name: 'Vencimiento', value: `<t:${Math.floor(prestamo.fechaLimite / 1000)}:R>`, inline: false });
@@ -2245,6 +2262,38 @@ async function handleCrearItemSubasta(interaction) {
 
   await interaction.reply({ embeds: [embed] });
 }
+
+async function handleMorosos(interaction) {
+  const ENCARGADO_ROL = '1497936257219559455'; 
+  if (!interaction.member.roles.cache.has(ENCARGADO_ROL) && !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) return interaction.reply({ content: '❌ Solo encargados pueden ver morosos.', flags: MessageFlags.Ephemeral });
+
+  const morosos = prestamosGlobal.filter(p => p.estado === 'aprobado' && p.fechaLimite < Date.now());
+  if (morosos.length === 0) return interaction.reply({ content: '✅ El banco está limpio. No hay morosos actualmente.', flags: MessageFlags.Ephemeral });
+
+  let desc = morosos.map(p => `**ID:** ${p.id} | <@${p.userId}> | **Deuda:** ${p.aPagar}€ | **Venció:** <t:${Math.floor(p.fechaLimite/1000)}:R>`).join('\n');
+  await interaction.reply({ embeds: [new EmbedBuilder().setTitle('🚨 Lista Negra de Morosos').setDescription(desc).setColor('#FF0000')], flags: MessageFlags.Ephemeral });
+}
+
+function getUserData(guildId, userId) {
+  if (!identidades[guildId]) identidades[guildId] = {};
+  if (!identidades[guildId][userId]) {
+    identidades[guildId][userId] = {
+      pjs: {
+        "1": { dni: null, carnetConducir: null, licenciaArmas: null },
+        "2": { dni: null, carnetConducir: null, licenciaArmas: null }
+      },
+      dinero: 6000,
+      lastSalary: null,
+      drogas: { marihuana: 0, cocaina: 0 } // AÑADIDO PARA IDEA E
+    };
+  } else {
+    if (typeof identidades[guildId][userId].dinero !== 'number') identidades[guildId][userId].dinero = 6000;
+    if (!identidades[guildId][userId].lastSalary) identidades[guildId][userId].lastSalary = null;
+    if (!identidades[guildId][userId].drogas) identidades[guildId][userId].drogas = { marihuana: 0, cocaina: 0 }; // AÑADIDO
+  }
+  return identidades[guildId][userId];
+}
+
 // ======================
 // LOGIN DEL BOT
 // ======================
