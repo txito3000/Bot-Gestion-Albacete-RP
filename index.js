@@ -327,7 +327,7 @@ function guardarIdentidades() {
   }
 }
 
-ffunction getUserData(guildId, userId) {
+function getUserData(guildId, userId) {
   if (!identidades[guildId]) identidades[guildId] = {};
   if (!identidades[guildId][userId]) {
     identidades[guildId][userId] = {
