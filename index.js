@@ -251,6 +251,7 @@ function guardarLoteria() {
 // UTILIDADES
 // ======================
 function generarIDCorto(prefijo) {
+  // Genera un ID tipo SUB-1234 o PRE-5678 (Mucho más fácil de escribir para los usuarios)
   return `${prefijo}-${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
