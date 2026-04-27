@@ -1494,7 +1494,7 @@ async function handleAbrirServer(interaction) {
   const pingContent = `**Se unirán:** ${mencionesSi || '*Nadie*'}\n**Se unirán más tarde:** ${mencionesTarde || '*Nadie*'}`;
   const embed = new EmbedBuilder()
     .setTitle('🔓 ¡EL SERVIDOR ESTÁ ABIERTO!')
-    .setDescription('**¡Atención!**\nLos que hayan votado tienen **10 minutos** para unirse,en caso de no hacerlo es motivo de sanción.\n\n¡Que os lo pasis genial!')
+    .setDescription('**¡Atención!**\nLos que hayan votado tienen **10 minutos** para unirse, **en caso de no hacerlo es motivo de sanción**. Cualquier problema contactar con moderación.\n\n¡Que os lo pasis genial!')
     .setColor(0x00FF00)
     .setImage('https://i.imgur.com/HD16e0g.jpeg')
     .setTimestamp();
@@ -1516,7 +1516,7 @@ async function abrirServidorAutomatico(channel, pollData) {
   const pingContent = `**Se unirán:** ${mencionesSi || '*Nadie*'}\n**Se unirán más tarde:** ${mencionesTarde || '*Nadie*'}`;
   const embed = new EmbedBuilder()
     .setTitle('🔓 ¡EL SERVIDOR SE HA ABIERTO AUTOMÁTICAMENTE!')
-    .setDescription('Se alcanzó el mínimo de **5 votos "Me uniré"**.\n\nLos que hayan votado tienen **10 minutos** para unirse,en caso de no hacerlo es motivo de sanción.\n\n¡Diviértanse!')
+    .setDescription('Se alcanzó el mínimo de **5 votos "Me uniré"**.\n\nLos que hayan votado tienen **10 minutos** para unirse, **en caso de no hacerlo es motivo de sanción**. Cualquier problema contactar con moderación.\n\n¡Diviértanse!')
     .setColor(0x00FF00)
     .setImage('https://i.imgur.com/HD16e0g.jpeg')
     .setTimestamp();
