@@ -1496,7 +1496,7 @@ async function handleAbrirServer(interaction) {
     .setTitle('🔓 ¡EL SERVIDOR ESTÁ ABIERTO!')
     .setDescription('**¡Atención!**\nTienen **10 minutos** para unirse al servidor.\n\n¡Que lo pasen genial!')
     .setColor(0x00FF00)
-    .setImage('https://gemini.google.com/share/b4e59b7ca957')
+    .setImage('https://i.imgur.com/HD16e0g.jpeg')
     .setTimestamp();
 
   await interaction.editReply({ content: pingContent, embeds: [embed] });
@@ -1518,7 +1518,7 @@ async function abrirServidorAutomatico(channel, pollData) {
     .setTitle('🔓 ¡EL SERVIDOR SE HA ABIERTO AUTOMÁTICAMENTE!')
     .setDescription('Se alcanzó el mínimo de **5 votos "Me uniré"**.\n\nTienen **10 minutos** para unirse.\n\n¡Diviértanse!')
     .setColor(0x00FF00)
-    .setImage('https://gemini.google.com/share/b4e59b7ca957')
+    .setImage('https://i.imgur.com/HD16e0g.jpeg')
     .setTimestamp();
 
   await channel.send({ content: pingContent, embeds: [embed] });
@@ -1534,7 +1534,7 @@ async function handleCerrarServer(interaction) {
     .setTitle('🔒 SERVIDOR CERRADO')
     .setDescription('**¡Gracias por unirse!**\n\nAgradecemos a todos los que participaron.\n\n¡Hasta la próxima!')
     .setColor(0xFF0000)
-    .setImage('https://gemini.google.com/share/565f9ff49f8c')
+    .setImage('https://i.imgur.com/2OKPRFv.jpeg')
     .setTimestamp();
   await interaction.editReply({ content: '@everyone', embeds: [embed] });
 }
