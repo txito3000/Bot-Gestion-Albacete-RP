@@ -496,9 +496,10 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'suspender-licencia': await handleSuspenderLicencia(interaction); break;
         case 'ver-carnet-policia': await handleVerCarnetPolicia(interaction); break;
         case 'ver-licencia-policia': await handleVerLicenciaPolicia(interaction); break;
-          case 'morosos': await handleMorosos(interaction); break;
+        case 'morosos': await handleMorosos(interaction); break;
         case 'procesar': await handleProcesar(interaction); break;
         case 'vender-ilegal': await handleVenderIlegal(interaction); break;
+        case 'drogas': await handleVerDrogas(interaction); break;  
       }
       return;
     }
@@ -2294,6 +2295,93 @@ function getUserData(guildId, userId) {
   }
   return identidades[guildId][userId];
 }
+
+// ======================
+// COMANDOS DE SUSTANCIAS (IDEA E) - CORREGIDOS
+// ======================
+
+async function handleProcesar(interaction) {
+  const tipo = interaction.options.getString('tipo');
+  const userData = getUserData(interaction.guild.id, interaction.user.id);
+
+  let cantidadProcesada = 0;
+  let ganancia = 0;
+
+  if (tipo === 'marihuana') {
+    if (userData.drogas.marihuana <= 0) {
+      return interaction.reply({ content: '❌ No tienes marihuana para procesar.', flags: MessageFlags.Ephemeral });
+    }
+    cantidadProcesada = userData.drogas.marihuana;
+    ganancia = Math.floor(cantidadProcesada * 120); // Precio procesada
+    userData.drogas.marihuana = 0;
+  } else if (tipo === 'cocaina') {
+    if (userData.drogas.cocaina <= 0) {
+      return interaction.reply({ content: '❌ No tienes cocaína para procesar.', flags: MessageFlags.Ephemeral });
+    }
+    cantidadProcesada = userData.drogas.cocaina;
+    ganancia = Math.floor(cantidadProcesada * 280); // Precio procesada
+    userData.drogas.cocaina = 0;
+  }
+
+  userData.dinero += ganancia;
+  guardarIdentidades();
+
+  await interaction.reply({
+    content: `🌿 **Procesamiento completado**\n\n` +
+             `**Tipo:** ${tipo.toUpperCase()}\n` +
+             `**Cantidad procesada:** ${cantidadProcesada}g\n` +
+             `**Ganancia:** +**$${ganancia.toLocaleString('es-ES')}**\n` +
+             `**Nuevo balance:** $${userData.dinero.toLocaleString('es-ES')}`
+  });
+}
+
+async function handleVenderIlegal(interaction) {
+  const tipo = interaction.options.getString('tipo');
+  const userData = getUserData(interaction.guild.id, interaction.user.id);
+
+  let cantidad = 0;
+  let precioPorUnidad = 0;
+
+  if (tipo === 'marihuana') {
+    cantidad = userData.drogas.marihuana;
+    precioPorUnidad = 80;
+    if (cantidad <= 0) return interaction.reply({ content: '❌ No tienes marihuana para vender.', flags: MessageFlags.Ephemeral });
+    userData.drogas.marihuana = 0;
+  } else if (tipo === 'cocaina') {
+    cantidad = userData.drogas.cocaina;
+    precioPorUnidad = 200;
+    if (cantidad <= 0) return interaction.reply({ content: '❌ No tienes cocaína para vender.', flags: MessageFlags.Ephemeral });
+    userData.drogas.cocaina = 0;
+  }
+
+  const total = cantidad * precioPorUnidad;
+  userData.dinero += total;
+  guardarIdentidades();
+
+  await interaction.reply({
+    content: `🕴️ **Venta en mercado negro realizada**\n\n` +
+             `**Tipo:** ${tipo.toUpperCase()}\n` +
+             `**Cantidad vendida:** ${cantidad}g\n` +
+             `**Precio por unidad:** $${precioPorUnidad}\n` +
+             `**Total recibido:** **$${total.toLocaleString('es-ES')}**\n` +
+             `**Nuevo balance:** $${userData.dinero.toLocaleString('es-ES')}`
+  });
+}
+
+async function handleVerDrogas(interaction) {
+  const userData = getUserData(interaction.guild.id, interaction.user.id);
+  await interaction.reply({
+    embeds: [new EmbedBuilder()
+      .setTitle('🌿 Tus Sustancias')
+      .setColor('#00FF88')
+      .addFields(
+        { name: '🌿 Marihuana', value: `${userData.drogas.marihuana}g`, inline: true },
+        { name: '❄️ Cocaína', value: `${userData.drogas.cocaina}g`, inline: true }
+      )
+    ]
+  });
+}
+
 
 // ======================
 // LOGIN DEL BOT
