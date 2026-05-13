@@ -337,12 +337,15 @@ function getUserData(guildId, userId) {
       },
       dinero: 6000,
       lastSalary: null,
-      drogas: { marihuana: 0, cocaina: 0 } // AÑADIDO PARA IDEA E
+      drogas: { marihuana: 0, cocaina: 0 },
+      inventario: {}   // ← AÑADIDO AQUÍ
     };
   } else {
-    if (typeof identidades[guildId][userId].dinero !== 'number') identidades[guildId][userId].dinero = 6000;
-    if (!identidades[guildId][userId].lastSalary) identidades[guildId][userId].lastSalary = null;
-    if (!identidades[guildId][userId].drogas) identidades[guildId][userId].drogas = { marihuana: 0, cocaina: 0 }; // AÑADIDO
+    const data = identidades[guildId][userId];
+    if (typeof data.dinero !== 'number') data.dinero = 6000;
+    if (!data.lastSalary) data.lastSalary = null;
+    if (!data.drogas) data.drogas = { marihuana: 0, cocaina: 0 };
+    if (!data.inventario) data.inventario = {};   // ← IMPORTANTE
   }
   return identidades[guildId][userId];
 }
@@ -2451,46 +2454,9 @@ async function handleVerInventario(interaction) {
   await interaction.reply({ embeds: [embed] });
 }
 
+/ ======================
+// ADMIN - AÑADIR / QUITAR ARTÍCULO
 // ======================
-// COMANDOS ADMIN - DROGAS Y ARTÍCULOS
-// ======================
-
-async function handleAdminDrogas(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
-  }
-
-  const target = interaction.options.getMember('usuario');
-  const tipo = interaction.options.getString('tipo');
-  let cantidad = interaction.options.getInteger('cantidad');
-
-  const userData = getUserData(interaction.guild.id, target.id);
-
-  if (tipo === 'marihuana') {
-    userData.drogas.marihuana = (userData.drogas.marihuana || 0) + cantidad;
-    if (userData.drogas.marihuana < 0) userData.drogas.marihuana = 0;
-  } else {
-    userData.drogas.cocaina = (userData.drogas.cocaina || 0) + cantidad;
-    if (userData.drogas.cocaina < 0) userData.drogas.cocaina = 0;
-  }
-
-  guardarIdentidades();
-
-  const accion = cantidad >= 0 ? 'añadido' : 'quitado';
-  await interaction.reply({
-    embeds: [new EmbedBuilder()
-      .setTitle('🔧 Admin - Drogas')
-      .setColor(cantidad >= 0 ? '#00FF88' : '#FF0000')
-      .addFields(
-        { name: 'Usuario', value: `${target}`, inline: true },
-        { name: 'Droga', value: tipo === 'marihuana' ? '🌿 Marihuana' : '❄️ Cocaína', inline: true },
-        { name: 'Cantidad', value: `${cantidad >= 0 ? '+' : ''}${cantidad}`, inline: true },
-        { name: 'Nuevo stock', value: `${tipo === 'marihuana' ? userData.drogas.marihuana : userData.drogas.cocaina}g`, inline: false }
-      )
-    ]
-  });
-}
-
 async function handleAdminArticulo(interaction) {
   if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return interaction.reply({ content: '❌ Solo administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
@@ -2498,34 +2464,85 @@ async function handleAdminArticulo(interaction) {
 
   const target = interaction.options.getMember('usuario');
   const nombre = interaction.options.getString('nombre').trim();
-  let cantidad = interaction.options.getInteger('cantidad');
+  const cantidad = interaction.options.getInteger('cantidad');
 
   const userData = getUserData(interaction.guild.id, target.id);
 
-  // Crear inventario si no existe
   if (!userData.inventario) userData.inventario = {};
 
   if (!userData.inventario[nombre]) userData.inventario[nombre] = 0;
   
   userData.inventario[nombre] += cantidad;
-  if (userData.inventario[nombre] < 0) userData.inventario[nombre] = 0;
+
+  if (userData.inventario[nombre] <= 0) {
+    delete userData.inventario[nombre];
+  }
 
   guardarIdentidades();
 
-  const accion = cantidad >= 0 ? 'añadido' : 'quitado';
+  const embed = new EmbedBuilder()
+    .setTitle('🔧 Admin - Inventario Actualizado')
+    .setColor(cantidad >= 0 ? '#00FF88' : '#FF0000')
+    .addFields(
+      { name: 'Usuario', value: `${target}`, inline: true },
+      { name: 'Artículo', value: nombre, inline: true },
+      { name: 'Cantidad', value: `${cantidad >= 0 ? '+' : ''}${cantidad}`, inline: true },
+      { name: 'Stock Actual', value: `${userData.inventario[nombre] || 0}`, inline: false }
+    );
 
-  await interaction.reply({
-    embeds: [new EmbedBuilder()
-      .setTitle('🔧 Admin - Artículo')
-      .setColor(cantidad >= 0 ? '#00AAFF' : '#FF8800')
-      .addFields(
-        { name: 'Usuario', value: `${target}`, inline: true },
-        { name: 'Artículo', value: nombre, inline: true },
-        { name: 'Cantidad', value: `${cantidad >= 0 ? '+' : ''}${cantidad}`, inline: true },
-        { name: 'Nuevo stock', value: `${userData.inventario[nombre]}`, inline: false }
-      )
-    ]
+  await interaction.reply({ embeds: [embed] });
+}
+
+// ======================
+// VER INVENTARIO
+// ======================
+async function handleVerInventario(interaction) {
+  const target = interaction.options.getMember('usuario') || interaction.member;
+  const isSelf = target.id === interaction.user.id;
+
+  if (!isSelf && !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ 
+      content: '❌ Solo administradores pueden ver el inventario de otros.', 
+      flags: MessageFlags.Ephemeral 
+    });
+  }
+
+  const userData = getUserData(interaction.guild.id, target.id);
+  if (!userData.inventario) userData.inventario = {};
+
+  const embed = new EmbedBuilder()
+    .setTitle(`📦 Inventario de ${target.user.tag}`)
+    .setColor('#00AAFF')
+    .setThumbnail(target.user.displayAvatarURL())
+    .setTimestamp();
+
+  // Sustancias
+  embed.addFields({
+    name: '🌿 Sustancias',
+    value: `**Marihuana:** ${userData.drogas?.marihuana || 0}g\n**Cocaína:** ${userData.drogas?.cocaina || 0}g`,
+    inline: false
   });
+
+  // Inventario normal
+  const itemsList = Object.entries(userData.inventario)
+    .filter(([, cant]) => cant > 0)
+    .map(([item, cant]) => `• **${item}** × ${cant}`);
+
+  if (itemsList.length > 0) {
+    embed.addFields({
+      name: '🛠️ Artículos',
+      value: itemsList.join('\n'),
+      inline: false
+    });
+  } else {
+    embed.addFields({
+      name: '🛠️ Artículos',
+      value: 'No tienes ningún artículo.',
+      inline: false
+    });
+  }
+
+  await interaction.reply({ embeds: [embed] });
 }
 
 
