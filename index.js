@@ -426,6 +426,27 @@ client.once(Events.ClientReady, async () => {
     // Comandos de drogas (Idea E)
     new SlashCommandBuilder().setName('procesar').setDescription('🌿 Procesar sustancias ilegales').addStringOption(opt => opt.setName('tipo').setDescription('Tipo de sustancia').setRequired(true).addChoices({ name: '🌿 Marihuana', value: 'marihuana' }, { name: '❄️ Cocaína', value: 'cocaina' })),
     new SlashCommandBuilder().setName('vender-ilegal').setDescription('🕴️ Vender sustancias en el mercado negro').addStringOption(opt => opt.setName('tipo').setDescription('Tipo de sustancia a vender').setRequired(true).addChoices({ name: '🌿 Marihuana', value: 'marihuana' }, { name: '❄️ Cocaína', value: 'cocaina' })),
+    new SlashCommandBuilder()
+      .setName('admin-drogas')
+      .setDescription('🔧 [ADMIN] Añadir o quitar drogas a un usuario')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
+      .addStringOption(opt => opt.setName('tipo').setDescription('Tipo de droga').setRequired(true)
+        .addChoices(
+          { name: '🌿 Marihuana', value: 'marihuana' },
+          { name: '❄️ Cocaína', value: 'cocaina' }
+        ))
+      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (positiva = añadir, negativa = quitar)').setRequired(true)),
+
+    new SlashCommandBuilder()
+      .setName('admin-articulo')
+      .setDescription('🔧 [ADMIN] Añadir o quitar un artículo del inventario de un usuario')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
+      .addStringOption(opt => opt.setName('nombre').setDescription('Nombre del artículo').setRequired(true))
+      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (positiva = añadir, negativa = quitar)').setRequired(true)),
+        new SlashCommandBuilder()
+      .setName('ver-inventario')
+      .setDescription('📦 Ver el inventario de un usuario')
+      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario (opcional, por defecto tú mismo)').setRequired(false)),
   ];
 
   for (const guild of client.guilds.cache.values()) {
@@ -469,14 +490,9 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'transferir': await handleTransferir(interaction); break;
         case 'apostar': await handleApostar(interaction); break;
         case 'leaderboard': await handleLeaderboard(interaction); break;
-        
-
-        // COMANDOS DE LOTERÍA
         case 'loteria-comprar': await handleLoteriaComprar(interaction); break;
         case 'loteria': await handleLoteria(interaction); break;
-        case 'loteria-historial': await handleLoteriaHistorial(interaction); break;
-
-        // COMANDOS TIENDA Y ECONOMÍA AVANZADA
+        case 'loteria-historial': await handleLoteriaHistorial(interaction); break; 
         case 'paneltienda': await handlePanelTienda(interaction); break;
         case 'tienda': await handleTienda(interaction); break;
         case 'añadirarticulo': await handleAñadirArticulo(interaction); break;
@@ -490,8 +506,6 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'pagarprestamo': await handlePagarPrestamo(interaction); break;
         case 'quitararticulo': await handleQuitarArticulo(interaction); break;
         case 'crearitemsubasta': await handleCrearItemSubasta(interaction); break;
-
-        // NUEVOS COMANDOS POLICÍA
         case 'suspender-carnet': await handleSuspenderCarnet(interaction); break;
         case 'suspender-licencia': await handleSuspenderLicencia(interaction); break;
         case 'ver-carnet-policia': await handleVerCarnetPolicia(interaction); break;
@@ -500,6 +514,9 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'procesar': await handleProcesar(interaction); break;
         case 'vender-ilegal': await handleVenderIlegal(interaction); break;
         case 'drogas': await handleVerDrogas(interaction); break;  
+        case 'admin-drogas': await handleAdminDrogas(interaction); break;
+        case 'admin-articulo': await handleAdminArticulo(interaction); break;
+        case 'ver-inventario': await handleVerInventario(interaction); break;
       }
       return;
     }
@@ -2377,6 +2394,135 @@ async function handleVerDrogas(interaction) {
       .addFields(
         { name: '🌿 Marihuana', value: `${userData.drogas.marihuana}g`, inline: true },
         { name: '❄️ Cocaína', value: `${userData.drogas.cocaina}g`, inline: true }
+      )
+    ]
+  });
+}
+
+async function handleVerInventario(interaction) {
+  const target = interaction.options.getMember('usuario') || interaction.member;
+  const isSelf = target.id === interaction.user.id;
+
+  // Si no es él mismo, comprobar permisos
+  if (!isSelf && !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ 
+      content: '❌ Solo administradores pueden ver el inventario de otros usuarios.', 
+      flags: MessageFlags.Ephemeral 
+    });
+  }
+
+  const userData = getUserData(interaction.guild.id, target.id);
+
+  // Asegurar que existe inventario
+  if (!userData.inventario) userData.inventario = {};
+
+  const embed = new EmbedBuilder()
+    .setTitle(`📦 Inventario de ${target.user.tag}`)
+    .setColor('#00AAFF')
+    .setThumbnail(target.user.displayAvatarURL())
+    .setTimestamp();
+
+  // Drogas
+  embed.addFields({
+    name: '🌿 Sustancias Ilegales',
+    value: `**Marihuana:** ${userData.drogas.marihuana || 0}g\n**Cocaína:** ${userData.drogas.cocaina || 0}g`,
+    inline: false
+  });
+
+  // Artículos del inventario
+  const items = Object.entries(userData.inventario)
+    .filter(([, cantidad]) => cantidad > 0)
+    .map(([nombre, cantidad]) => `**${nombre}** × ${cantidad}`);
+
+  if (items.length > 0) {
+    embed.addFields({
+      name: '🛠️ Artículos',
+      value: items.join('\n'),
+      inline: false
+    });
+  } else {
+    embed.addFields({
+      name: '🛠️ Artículos',
+      value: 'No tienes artículos en tu inventario.',
+      inline: false
+    });
+  }
+
+  await interaction.reply({ embeds: [embed] });
+}
+
+// ======================
+// COMANDOS ADMIN - DROGAS Y ARTÍCULOS
+// ======================
+
+async function handleAdminDrogas(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
+  }
+
+  const target = interaction.options.getMember('usuario');
+  const tipo = interaction.options.getString('tipo');
+  let cantidad = interaction.options.getInteger('cantidad');
+
+  const userData = getUserData(interaction.guild.id, target.id);
+
+  if (tipo === 'marihuana') {
+    userData.drogas.marihuana = (userData.drogas.marihuana || 0) + cantidad;
+    if (userData.drogas.marihuana < 0) userData.drogas.marihuana = 0;
+  } else {
+    userData.drogas.cocaina = (userData.drogas.cocaina || 0) + cantidad;
+    if (userData.drogas.cocaina < 0) userData.drogas.cocaina = 0;
+  }
+
+  guardarIdentidades();
+
+  const accion = cantidad >= 0 ? 'añadido' : 'quitado';
+  await interaction.reply({
+    embeds: [new EmbedBuilder()
+      .setTitle('🔧 Admin - Drogas')
+      .setColor(cantidad >= 0 ? '#00FF88' : '#FF0000')
+      .addFields(
+        { name: 'Usuario', value: `${target}`, inline: true },
+        { name: 'Droga', value: tipo === 'marihuana' ? '🌿 Marihuana' : '❄️ Cocaína', inline: true },
+        { name: 'Cantidad', value: `${cantidad >= 0 ? '+' : ''}${cantidad}`, inline: true },
+        { name: 'Nuevo stock', value: `${tipo === 'marihuana' ? userData.drogas.marihuana : userData.drogas.cocaina}g`, inline: false }
+      )
+    ]
+  });
+}
+
+async function handleAdminArticulo(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
+  }
+
+  const target = interaction.options.getMember('usuario');
+  const nombre = interaction.options.getString('nombre').trim();
+  let cantidad = interaction.options.getInteger('cantidad');
+
+  const userData = getUserData(interaction.guild.id, target.id);
+
+  // Crear inventario si no existe
+  if (!userData.inventario) userData.inventario = {};
+
+  if (!userData.inventario[nombre]) userData.inventario[nombre] = 0;
+  
+  userData.inventario[nombre] += cantidad;
+  if (userData.inventario[nombre] < 0) userData.inventario[nombre] = 0;
+
+  guardarIdentidades();
+
+  const accion = cantidad >= 0 ? 'añadido' : 'quitado';
+
+  await interaction.reply({
+    embeds: [new EmbedBuilder()
+      .setTitle('🔧 Admin - Artículo')
+      .setColor(cantidad >= 0 ? '#00AAFF' : '#FF8800')
+      .addFields(
+        { name: 'Usuario', value: `${target}`, inline: true },
+        { name: 'Artículo', value: nombre, inline: true },
+        { name: 'Cantidad', value: `${cantidad >= 0 ? '+' : ''}${cantidad}`, inline: true },
+        { name: 'Nuevo stock', value: `${userData.inventario[nombre]}`, inline: false }
       )
     ]
   });
