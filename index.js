@@ -2474,7 +2474,7 @@ async function handleVerInventario(interaction) {
     await interaction.reply({ embeds: [embed] });
 }
 
-/ ======================
+// ======================
 // ADMIN - AÑADIR / QUITAR ARTÍCULO
 // ======================
 async function handleAdminArticulo(interaction) {
