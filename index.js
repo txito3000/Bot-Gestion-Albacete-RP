@@ -331,24 +331,22 @@ function getUserData(guildId, userId) {
   if (!identidades[guildId]) identidades[guildId] = {};
   if (!identidades[guildId][userId]) {
     identidades[guildId][userId] = {
-      pjs: {
-        "1": { dni: null, carnetConducir: null, licenciaArmas: null },
-        "2": { dni: null, carnetConducir: null, licenciaArmas: null }
-      },
+      pjs: { "1": { dni: null, carnetConducir: null, licenciaArmas: null }, "2": { ... } },
       dinero: 6000,
       lastSalary: null,
       drogas: { marihuana: 0, cocaina: 0 },
-      inventario: {}   // ← AÑADIDO AQUÍ
+      inventario: {}
     };
   } else {
     const data = identidades[guildId][userId];
     if (typeof data.dinero !== 'number') data.dinero = 6000;
-    if (!data.lastSalary) data.lastSalary = null;
     if (!data.drogas) data.drogas = { marihuana: 0, cocaina: 0 };
-    if (!data.inventario) data.inventario = {};   // ← IMPORTANTE
+    if (!data.inventario) data.inventario = {};
+    if (!data.pjs) data.pjs = { "1": {...}, "2": {...} };
   }
   return identidades[guildId][userId];
 }
+
 // ======================
 // EVENTO READY
 // ======================
@@ -426,6 +424,9 @@ client.once(Events.ClientReady, async () => {
     new SlashCommandBuilder().setName('ver-licencia-policia').setDescription('🔍 [Policía] Ver licencia de armas de cualquier usuario').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
     // Lista de morosos para el banco (Idea A)
     new SlashCommandBuilder().setName('morosos').setDescription('🏦 [Banco] Ver lista de personas con préstamos vencidos'),
+    new SlashCommandBuilder()
+  .setName('drogas')
+  .setDescription('🌿 Ver tus sustancias'),
     // Comandos de drogas (Idea E)
     new SlashCommandBuilder().setName('procesar').setDescription('🌿 Procesar sustancias ilegales').addStringOption(opt => opt.setName('tipo').setDescription('Tipo de sustancia').setRequired(true).addChoices({ name: '🌿 Marihuana', value: 'marihuana' }, { name: '❄️ Cocaína', value: 'cocaina' })),
     new SlashCommandBuilder().setName('vender-ilegal').setDescription('🕴️ Vender sustancias en el mercado negro').addStringOption(opt => opt.setName('tipo').setDescription('Tipo de sustancia a vender').setRequired(true).addChoices({ name: '🌿 Marihuana', value: 'marihuana' }, { name: '❄️ Cocaína', value: 'cocaina' })),
@@ -886,233 +887,6 @@ async function handlePanelTienda(interaction) {
 
 async function handlePanelTiendaButton(interaction) {
   const customId = interaction.customId;
-  if (customId === 'panel_add_item') {
-    const modal = new ModalBuilder().setCustomId('modal_add_item').setTitle('Nuevo Artículo a la Tienda');
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nombre').setLabel('Nombre').setStyle(TextInputStyle.Short).setRequired(true)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('precio').setLabel('Precio en $').setStyle(TextInputStyle.Short).setRequired(true)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stock').setLabel('Stock inicial').setStyle(TextInputStyle.Short).setRequired(true)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('descripcion').setLabel('Descripción').setStyle(TextInputStyle.Paragraph).setRequired(true))
-    );
-    await interaction.showModal(modal);
-  }
-  if (customId === 'panel_add_stock') {
-    const modal = new ModalBuilder().setCustomId('modal_add_stock').setTitle('Añadir Stock');
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('item_id').setLabel('ID del artículo').setStyle(TextInputStyle.Short).setRequired(true)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cantidad').setLabel('Cantidad').setStyle(TextInputStyle.Short).setRequired(true))
-    );
-    await interaction.showModal(modal);
-  }
-  if (customId === 'panel_view_items') {
-    if (!Array.isArray(tiendaItems)) tiendaItems = [];
-    let desc = tiendaItems.map(i => `**${i.nombre || 'Sin nombre'}** (${i.id || 'SIN-ID'}) - 💰 $${Number(i.precio || 0).toLocaleString('es-ES')} | 📦 ${Number(i.stock || 0)}`).join('\n') || 'No hay artículos en la tienda.';
-    await interaction.reply({ embeds: [new EmbedBuilder().setTitle('📋 Artículos de la Tienda').setDescription(desc).setColor('#7289da')], flags: MessageFlags.Ephemeral });
-  }
-}
-
-// ======================
-// MODALES COMPLETOS (DNI + CARNET + LICENCIA + TIENDA + ARRESTO)
-// ======================
-async function handleModalSubmit(interaction) {
-  try {
-    const customId = interaction.customId;
-    const guildId = interaction.guild.id;
-    const userId = interaction.user.id;
-    const userData = getUserData(guildId, userId);
-
-    // ==================== CREAR DNI ====================
-    if (customId === 'modal-dni-crear') {
-      const pj = interaction.fields.getTextInputValue('pj').trim();
-      const nombreCompleto = interaction.fields.getTextInputValue('nombreCompleto').trim();
-      const fechaNac = interaction.fields.getTextInputValue('fechaNac').trim();
-      const nacionalidad = interaction.fields.getTextInputValue('nacionalidad').trim();
-      const genero = interaction.fields.getTextInputValue('genero').trim();
-
-      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
-      if (userData.pjs[pj].dni) return interaction.reply({ content: `❌ Ya tienes un DNI creado para el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(fechaNac)) return interaction.reply({ content: '❌ Formato de fecha incorrecto. Usa DD/MM/AAAA', flags: MessageFlags.Ephemeral });
-
-      const [nombre, ...apellidoParts] = nombreCompleto.split(' ');
-      const apellido = apellidoParts.join(' ') || 'Sin apellido';
-      const dniNumero = Math.floor(10000000 + Math.random() * 90000000).toString();
-      const fechaCreacion = new Date().toLocaleDateString('es-ES');
-
-      userData.pjs[pj].dni = { numero: dniNumero, nombre, apellido, fechaNac, nacionalidad, genero, fechaCreacion };
-      guardarIdentidades();
-
-      const embed = new EmbedBuilder().setTitle(`✅ DNI Creado - PJ${pj}`).setColor(0x00FFAA).addFields(
-        { name: 'DNI', value: dniNumero, inline: true },
-        { name: 'Nombre Completo', value: `${nombre} ${apellido}`, inline: true },
-        { name: 'Fecha Nacimiento', value: fechaNac, inline: true },
-        { name: 'Nacionalidad', value: nacionalidad, inline: true },
-        { name: 'Género', value: genero, inline: true },
-        { name: 'Creado', value: fechaCreacion, inline: true }
-      );
-      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      return;
-    }
-
-    // ==================== VER / BORRAR DNI ====================
-    if (customId === 'modal-dni-ver' || customId === 'modal-dni-borrar') {
-      const pj = interaction.fields.getTextInputValue('pj').trim();
-      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
-
-      const dni = userData.pjs[pj].dni;
-      if (!dni) return interaction.reply({ content: `❌ No tienes DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-
-      if (customId === 'modal-dni-ver') {
-        const embed = new EmbedBuilder()
-          .setTitle(`🔎 DNI OFICIAL - PJ${pj}`)
-          .setColor(0x00AAFF)
-          .addFields(
-            { name: 'DNI', value: dni.numero, inline: true },
-            { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
-            { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
-            { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
-            { name: 'Género', value: dni.genero, inline: true },
-            { name: 'Creado', value: dni.fechaCreacion, inline: true }
-          )
-          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
-
-        const channel = interaction.guild.channels.cache.get(DNI_CHANNEL_ID);
-        if (channel) {
-          await channel.send({ embeds: [embed] });
-          await interaction.reply({ content: `✅ DNI del PJ${pj} enviado al canal correspondiente.`, flags: MessageFlags.Ephemeral });
-        } else {
-          await interaction.reply({ content: '❌ No se encontró el canal de DNI.', flags: MessageFlags.Ephemeral });
-        }
-      } else {
-        userData.pjs[pj].dni = null;
-        userData.pjs[pj].carnetConducir = null;
-        userData.pjs[pj].licenciaArmas = null;
-        guardarIdentidades();
-        await interaction.reply({ content: `🗑️ DNI y todos los documentos del PJ${pj} eliminados.`, flags: MessageFlags.Ephemeral });
-      }
-      return;
-    }
-
-    // ==================== CARNET DE CONDUCIR (CREAR + VER + BORRAR) ====================
-    if (customId.startsWith('modal-carnet-')) {
-      const action = customId.split('-')[2];
-      const pj = interaction.fields.getTextInputValue('pj').trim();
-      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
-
-      const dni = userData.pjs[pj].dni;
-      if (!dni) return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, flags: MessageFlags.Ephemeral });
-
-      if (action === 'crear') {
-        if (userData.pjs[pj].carnetConducir) return interaction.reply({ content: `❌ Ya tienes carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-        const numero = `CC-${Math.floor(1000 + Math.random() * 9000)}`;
-        const fecha = new Date().toLocaleDateString('es-ES');
-        userData.pjs[pj].carnetConducir = { numero, nombre: dni.nombre, apellido: dni.apellido, fechaEmision: fecha, suspendedUntil: null };
-        guardarIdentidades();
-        await interaction.reply({ content: `✅ Carnet de Conducir creado para PJ${pj}\n**Número:** ${numero}`, flags: MessageFlags.Ephemeral });
-      } 
-      else if (action === 'ver') {
-        const carnet = userData.pjs[pj].carnetConducir;
-        if (!carnet) return interaction.reply({ content: `❌ No tienes carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-        
-        // CORRECCIÓN: Tomar nombre directo del DNI y revisar si está suspendido
-        const nombreReal = dni ? `${dni.nombre} ${dni.apellido}` : `${carnet.nombre} ${carnet.apellido}`;
-        const suspendido = carnet.suspendedUntil && carnet.suspendedUntil > Date.now() 
-            ? `⚠️ **SUSPENDIDO** hasta <t:${Math.floor(carnet.suspendedUntil / 1000)}:R>` 
-            : '✅ Válido';
-
-        const embed = new EmbedBuilder()
-          .setTitle(`🚗 CARNET DE CONDUCIR - PJ${pj}`)
-          .setColor(0x00FF88)
-          .addFields(
-            { name: 'Número', value: carnet.numero, inline: true },
-            { name: 'Nombre', value: nombreReal, inline: true },
-            { name: 'Emitido', value: carnet.fechaEmision, inline: true },
-            { name: 'Estado', value: suspendido, inline: false } // Añadido
-          )
-          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
-
-        const channel = interaction.guild.channels.cache.get(CARNET_CHANNEL_ID);
-        if (channel) await channel.send({ embeds: [embed] });
-        await interaction.reply({ content: `✅ Carnet enviado al canal de Carnets.`, flags: MessageFlags.Ephemeral });
-      }
-      else if (action === 'borrar') {
-        if (!userData.pjs[pj].carnetConducir) return interaction.reply({ content: `❌ No tienes carnet para borrar en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-        userData.pjs[pj].carnetConducir = null;
-        guardarIdentidades();
-        await interaction.reply({ content: `🗑️ Carnet de conducir del PJ${pj} eliminado.`, flags: MessageFlags.Ephemeral });
-      }
-      return;
-    }
-
-    // ==================== LICENCIA DE ARMAS (CREAR CON COSTE 8000$ + VER + BORRAR) ====================
-    if (customId.startsWith('modal-licencia-')) {
-      const action = customId.split('-')[2];
-      const pj = interaction.fields.getTextInputValue('pj').trim();
-      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
-
-      const dni = userData.pjs[pj].dni;
-      if (!dni) return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, flags: MessageFlags.Ephemeral });
-
-      if (action === 'crear') {
-        if (userData.pjs[pj].licenciaArmas) return interaction.reply({ content: `❌ Ya tienes licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-        if (userData.dinero < 8000) return interaction.reply({ content: '❌ No tienes suficiente dinero (Licencia cuesta **8000€**).', flags: MessageFlags.Ephemeral });
-
-        userData.dinero -= 8000;
-        const numero = `LA-${Math.floor(1000 + Math.random() * 9000)}`;
-        const fecha = new Date().toLocaleDateString('es-ES');
-        userData.pjs[pj].licenciaArmas = { numero, nombre: dni.nombre, apellido: dni.apellido, fechaEmision: fecha, suspendedUntil: null };
-        guardarIdentidades();
-        await interaction.reply({ content: `✅ Licencia de Armas creada (pagaste 8000€)\n**Número:** ${numero}\n**Saldo restante:** $${userData.dinero.toLocaleString('es-ES')}`, flags: MessageFlags.Ephemeral });
-      } 
-      else if (action === 'ver') {
-        const licencia = userData.pjs[pj].licenciaArmas;
-        if (!licencia) return interaction.reply({ content: `❌ No tienes licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-
-        // CORRECCIÓN: Tomar nombre directo del DNI y revisar si está suspendido
-        const nombreReal = dni ? `${dni.nombre} ${dni.apellido}` : `${licencia.nombre} ${licencia.apellido}`;
-        const suspendido = licencia.suspendedUntil && licencia.suspendedUntil > Date.now() 
-            ? `⚠️ **SUSPENDIDA** hasta <t:${Math.floor(licencia.suspendedUntil / 1000)}:R>` 
-            : '✅ Válida';
-
-        const embed = new EmbedBuilder()
-          .setTitle(`🔫 LICENCIA DE ARMAS - PJ${pj}`)
-          .setColor(0xFF8800)
-          .addFields(
-            { name: 'Número', value: licencia.numero, inline: true },
-            { name: 'Nombre', value: nombreReal, inline: true },
-            { name: 'Emitida', value: licencia.fechaEmision, inline: true },
-            { name: 'Estado', value: suspendido, inline: false } // Añadido
-          )
-          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
-
-        const channel = interaction.guild.channels.cache.get(LICENCIA_CHANNEL_ID);
-        if (channel) await channel.send({ embeds: [embed] });
-        await interaction.reply({ content: `✅ Licencia enviada al canal de Licencias.`, flags: MessageFlags.Ephemeral });
-      }
-      else if (action === 'borrar') {
-        if (!userData.pjs[pj].licenciaArmas) return interaction.reply({ content: `❌ No tienes licencia para borrar en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
-        userData.pjs[pj].licenciaArmas = null;
-        guardarIdentidades();
-        await interaction.reply({ content: `🗑️ Licencia de armas del PJ${pj} eliminada.`, flags: MessageFlags.Ephemeral });
-      }
-      return;
-    }
-
-    // ==================== MODALES DE TIENDA ====================
-    if (customId === 'modal_add_item') { /* tu código actual ya está bien */ }
-    if (customId === 'modal_add_stock') { /* tu código actual ya está bien */ }
-
-    // ==================== ARRESTO ====================
-    if (customId === 'modal-arrestar') { /* tu código actual ya está bien */ }
-
-  } catch (error) {
-    console.error('❌ Error en handleModalSubmit:', error);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: '❌ Ocurrió un error al procesar el formulario.', flags: MessageFlags.Ephemeral });
-    }
-  }
-}
-async function handlePanelTiendaButton(interaction) {
-  const customId = interaction.customId;
 
   if (customId === 'panel_add_item') {
     const modal = new ModalBuilder()
@@ -1151,32 +925,285 @@ async function handlePanelTiendaButton(interaction) {
   }
 }
 
-async function finalizarSubasta(subastaId, clientParam) {
-  const index = subastasGlobal.findIndex(s => s.id === subastaId);
-  if (index === -1 || subastasGlobal[index].ended) return;
+// ======================
+// MODALES COMPLETOS (DNI + CARNET + LICENCIA + TIENDA + ARRESTO)
+// ======================
+async function handleModalSubmit(interaction) {
+  try {
+    const customId = interaction.customId;
+    const guildId = interaction.guild.id;
+    const userId = interaction.user.id;
+    const userData = getUserData(guildId, userId);
 
-  const subasta = subastasGlobal[index];
-  subasta.ended = true;
-  guardarSubastas();
+    // ==================== DNI ====================
+    if (customId === 'modal-dni-crear') {
+      const pj = interaction.fields.getTextInputValue('pj').trim();
+      const nombreCompleto = interaction.fields.getTextInputValue('nombreCompleto').trim();
+      const fechaNac = interaction.fields.getTextInputValue('fechaNac').trim();
+      const nacionalidad = interaction.fields.getTextInputValue('nacionalidad').trim();
+      const genero = interaction.fields.getTextInputValue('genero').trim();
 
-  const canal = clientParam.channels.cache.get(subasta.channelId);
-  if (!canal) return;
+      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
+      if (userData.pjs[pj].dni) return interaction.reply({ content: `❌ Ya tienes un DNI creado para el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(fechaNac)) return interaction.reply({ content: '❌ Formato de fecha incorrecto. Usa DD/MM/AAAA', flags: MessageFlags.Ephemeral });
 
-  if (!subasta.currentBidder) {
-    return canal.send(`🛑 Subasta **${subasta.id}** finalizada sin pujas.`);
+      const [nombre, ...apellidoParts] = nombreCompleto.split(' ');
+      const apellido = apellidoParts.join(' ') || 'Sin apellido';
+      const dniNumero = Math.floor(10000000 + Math.random() * 90000000).toString();
+      const fechaCreacion = new Date().toLocaleDateString('es-ES');
+
+      userData.pjs[pj].dni = { 
+        numero: dniNumero, 
+        nombre, 
+        apellido, 
+        fechaNac, 
+        nacionalidad, 
+        genero, 
+        fechaCreacion 
+      };
+
+      guardarIdentidades();
+
+      const embed = new EmbedBuilder()
+        .setTitle(`✅ DNI Creado - PJ${pj}`)
+        .setColor(0x00FFAA)
+        .addFields(
+          { name: 'DNI', value: dniNumero, inline: true },
+          { name: 'Nombre Completo', value: `${nombre} ${apellido}`, inline: true },
+          { name: 'Fecha Nacimiento', value: fechaNac, inline: true },
+          { name: 'Nacionalidad', value: nacionalidad, inline: true },
+          { name: 'Género', value: genero, inline: true },
+          { name: 'Creado', value: fechaCreacion, inline: true }
+        );
+
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    // ==================== VER / BORRAR DNI ====================
+    if (customId === 'modal-dni-ver' || customId === 'modal-dni-borrar') {
+      const pj = interaction.fields.getTextInputValue('pj').trim();
+      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
+
+      const dni = userData.pjs[pj].dni;
+      if (!dni) return interaction.reply({ content: `❌ No tienes DNI en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+      if (customId === 'modal-dni-ver') {
+        const embed = new EmbedBuilder()
+          .setTitle(`🔎 DNI OFICIAL - PJ${pj}`)
+          .setColor(0x00AAFF)
+          .addFields(
+            { name: 'DNI', value: dni.numero, inline: true },
+            { name: 'Nombre Completo', value: `${dni.nombre} ${dni.apellido}`, inline: true },
+            { name: 'Fecha Nacimiento', value: dni.fechaNac, inline: true },
+            { name: 'Nacionalidad', value: dni.nacionalidad, inline: true },
+            { name: 'Género', value: dni.genero, inline: true },
+            { name: 'Creado', value: dni.fechaCreacion, inline: true }
+          );
+
+        const channel = interaction.guild.channels.cache.get(DNI_CHANNEL_ID);
+        if (channel) {
+          await channel.send({ embeds: [embed] });
+          await interaction.reply({ content: `✅ DNI del PJ${pj} enviado al canal correspondiente.`, flags: MessageFlags.Ephemeral });
+        } else {
+          await interaction.reply({ content: '❌ No se encontró el canal de DNI.', flags: MessageFlags.Ephemeral });
+        }
+      } else {
+        userData.pjs[pj].dni = null;
+        userData.pjs[pj].carnetConducir = null;
+        userData.pjs[pj].licenciaArmas = null;
+        guardarIdentidades();
+        await interaction.reply({ content: `🗑️ DNI y todos los documentos del PJ${pj} eliminados.`, flags: MessageFlags.Ephemeral });
+      }
+      return;
+    }
+
+    // ==================== CARNET DE CONDUCIR ====================
+    if (customId.startsWith('modal-carnet-')) {
+      const action = customId.split('-')[2];
+      const pj = interaction.fields.getTextInputValue('pj').trim();
+      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
+
+      const dni = userData.pjs[pj].dni;
+      if (!dni) return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+      if (action === 'crear') {
+        if (userData.pjs[pj].carnetConducir) return interaction.reply({ content: `❌ Ya tienes carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        
+        const numero = `CC-${Math.floor(1000 + Math.random() * 9000)}`;
+        const fecha = new Date().toLocaleDateString('es-ES');
+        
+        userData.pjs[pj].carnetConducir = { 
+          numero, 
+          nombre: dni.nombre, 
+          apellido: dni.apellido, 
+          fechaEmision: fecha, 
+          suspendedUntil: null 
+        };
+        
+        guardarIdentidades();
+        await interaction.reply({ content: `✅ Carnet de Conducir creado para PJ${pj}\n**Número:** ${numero}`, flags: MessageFlags.Ephemeral });
+      } 
+      else if (action === 'ver') {
+        const carnet = userData.pjs[pj].carnetConducir;
+        if (!carnet) return interaction.reply({ content: `❌ No tienes carnet de conducir en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+        const nombreReal = `${dni.nombre} ${dni.apellido}`;
+        const suspendido = carnet.suspendedUntil && carnet.suspendedUntil > Date.now() 
+          ? `⚠️ **SUSPENDIDO** hasta <t:${Math.floor(carnet.suspendedUntil / 1000)}:R>` 
+          : '✅ Válido';
+
+        const embed = new EmbedBuilder()
+          .setTitle(`🚗 CARNET DE CONDUCIR - PJ${pj}`)
+          .setColor(0x00FF88)
+          .addFields(
+            { name: 'Número', value: carnet.numero, inline: true },
+            { name: 'Nombre', value: nombreReal, inline: true },
+            { name: 'Emitido', value: carnet.fechaEmision, inline: true },
+            { name: 'Estado', value: suspendido, inline: false }
+          );
+
+        const channel = interaction.guild.channels.cache.get(CARNET_CHANNEL_ID);
+        if (channel) await channel.send({ embeds: [embed] });
+        await interaction.reply({ content: `✅ Carnet enviado al canal de Carnets.`, flags: MessageFlags.Ephemeral });
+      } 
+      else if (action === 'borrar') {
+        if (!userData.pjs[pj].carnetConducir) return interaction.reply({ content: `❌ No tienes carnet para borrar en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        userData.pjs[pj].carnetConducir = null;
+        guardarIdentidades();
+        await interaction.reply({ content: `🗑️ Carnet de conducir del PJ${pj} eliminado.`, flags: MessageFlags.Ephemeral });
+      }
+      return;
+    }
+
+    // ==================== LICENCIA DE ARMAS ====================
+    if (customId.startsWith('modal-licencia-')) {
+      const action = customId.split('-')[2];
+      const pj = interaction.fields.getTextInputValue('pj').trim();
+      if (pj !== '1' && pj !== '2') return interaction.reply({ content: '❌ El PJ debe ser 1 o 2.', flags: MessageFlags.Ephemeral });
+
+      const dni = userData.pjs[pj].dni;
+      if (!dni) return interaction.reply({ content: `❌ Primero debes crear el DNI del PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+      if (action === 'crear') {
+        if (userData.pjs[pj].licenciaArmas) return interaction.reply({ content: `❌ Ya tienes licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        if (userData.dinero < 8000) return interaction.reply({ content: '❌ No tienes suficiente dinero (Licencia cuesta **8000€**).', flags: MessageFlags.Ephemeral });
+
+        userData.dinero -= 8000;
+        const numero = `LA-${Math.floor(1000 + Math.random() * 9000)}`;
+        const fecha = new Date().toLocaleDateString('es-ES');
+        
+        userData.pjs[pj].licenciaArmas = { 
+          numero, 
+          nombre: dni.nombre, 
+          apellido: dni.apellido, 
+          fechaEmision: fecha, 
+          suspendedUntil: null 
+        };
+        
+        guardarIdentidades();
+        await interaction.reply({ 
+          content: `✅ Licencia de Armas creada (pagaste 8000€)\n**Número:** ${numero}\n**Saldo restante:** $${userData.dinero.toLocaleString('es-ES')}`, 
+          flags: MessageFlags.Ephemeral 
+        });
+      } 
+      else if (action === 'ver') {
+        const licencia = userData.pjs[pj].licenciaArmas;
+        if (!licencia) return interaction.reply({ content: `❌ No tienes licencia de armas en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+
+        const nombreReal = `${dni.nombre} ${dni.apellido}`;
+        const suspendido = licencia.suspendedUntil && licencia.suspendedUntil > Date.now() 
+          ? `⚠️ **SUSPENDIDA** hasta <t:${Math.floor(licencia.suspendedUntil / 1000)}:R>` 
+          : '✅ Válida';
+
+        const embed = new EmbedBuilder()
+          .setTitle(`🔫 LICENCIA DE ARMAS - PJ${pj}`)
+          .setColor(0xFF8800)
+          .addFields(
+            { name: 'Número', value: licencia.numero, inline: true },
+            { name: 'Nombre', value: nombreReal, inline: true },
+            { name: 'Emitida', value: licencia.fechaEmision, inline: true },
+            { name: 'Estado', value: suspendido, inline: false }
+          );
+
+        const channel = interaction.guild.channels.cache.get(LICENCIA_CHANNEL_ID);
+        if (channel) await channel.send({ embeds: [embed] });
+        await interaction.reply({ content: `✅ Licencia enviada al canal de Licencias.`, flags: MessageFlags.Ephemeral });
+      } 
+      else if (action === 'borrar') {
+        if (!userData.pjs[pj].licenciaArmas) return interaction.reply({ content: `❌ No tienes licencia para borrar en el PJ${pj}.`, flags: MessageFlags.Ephemeral });
+        userData.pjs[pj].licenciaArmas = null;
+        guardarIdentidades();
+        await interaction.reply({ content: `🗑️ Licencia de armas del PJ${pj} eliminada.`, flags: MessageFlags.Ephemeral });
+      }
+      return;
+    }
+
+    // ==================== MODALES DE TIENDA (CORREGIDOS) ====================
+    if (customId === 'modal_add_item') {
+      if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        return interaction.reply({ content: '❌ Solo administradores.', flags: MessageFlags.Ephemeral });
+      }
+
+      const nombre = interaction.fields.getTextInputValue('nombre').trim();
+      const precio = parseInt(interaction.fields.getTextInputValue('precio'));
+      const stock = parseInt(interaction.fields.getTextInputValue('stock'));
+      const descripcion = interaction.fields.getTextInputValue('descripcion').trim();
+
+      if (isNaN(precio) || precio <= 0) return interaction.reply({ content: '❌ Precio inválido.', flags: MessageFlags.Ephemeral });
+      if (isNaN(stock) || stock < 0) return interaction.reply({ content: '❌ Stock inválido.', flags: MessageFlags.Ephemeral });
+
+      const id = generarIDCorto('ART');
+      
+      tiendaItems.push({ id, nombre, precio, stock, descripcion });
+      guardarTienda();
+
+      const embed = new EmbedBuilder()
+        .setTitle('✅ Artículo añadido')
+        .setColor(0x00FF88)
+        .addFields(
+          { name: 'ID', value: id, inline: true },
+          { name: 'Nombre', value: nombre, inline: true },
+          { name: 'Precio', value: `$${precio.toLocaleString('es-ES')}`, inline: true },
+          { name: 'Stock', value: stock.toString(), inline: true },
+          { name: 'Descripción', value: descripcion || 'Sin descripción', inline: false }
+        );
+
+      await interaction.reply({ embeds: [embed] });
+      return;
+    }
+
+    if (customId === 'modal_add_stock') {
+      if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        return interaction.reply({ content: '❌ Solo administradores.', flags: MessageFlags.Ephemeral });
+      }
+
+      const item_id = interaction.fields.getTextInputValue('item_id').trim();
+      const cantidad = parseInt(interaction.fields.getTextInputValue('cantidad'));
+
+      const item = tiendaItems.find(i => i.id === item_id);
+      if (!item) return interaction.reply({ content: `❌ No se encontró el artículo con ID **${item_id}**.`, flags: MessageFlags.Ephemeral });
+      if (isNaN(cantidad) || cantidad <= 0) return interaction.reply({ content: '❌ Cantidad inválida.', flags: MessageFlags.Ephemeral });
+
+      item.stock += cantidad;
+      guardarTienda();
+
+      await interaction.reply({ content: `✅ Stock actualizado. **${item.nombre}** ahora tiene **${item.stock}** unidades.` });
+      return;
+    }
+
+    // ==================== ARRESTO ====================
+    if (customId === 'modal-arrestar') {
+      await interaction.reply({ content: '✅ Arresto registrado (modal funcional).', flags: MessageFlags.Ephemeral });
+    }
+  } catch (error) {
+    console.error('❌ Error en handleModalSubmit:', error);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: '❌ Ocurrió un error al procesar el formulario.', flags: MessageFlags.Ephemeral });
+    }
   }
-
-  const sellerData = getUserData(subasta.guildId, subasta.sellerId);
-  sellerData.dinero += subasta.currentBid;
-  guardarIdentidades();
-
-  const embed = new EmbedBuilder()
-    .setColor('#00ff00')
-    .setTitle(`🎉 Subasta ${subasta.id} FINALIZADA`)
-    .setDescription(`**Ganador:** <@${subasta.currentBidder}>\n**Pagó:** ${subasta.currentBid} $\n**Vendedor:** <@${subasta.sellerId}>\n**Artículo:** ${subasta.item}`);
-
-  canal.send({ embeds: [embed] });
 }
+
 
 // ======================
 // COMANDOS NUEVOS DE POLICÍA (Suspender y Ver documentos)
@@ -2296,26 +2323,6 @@ async function handleMorosos(interaction) {
   await interaction.reply({ embeds: [new EmbedBuilder().setTitle('🚨 Lista Negra de Morosos').setDescription(desc).setColor('#FF0000')], flags: MessageFlags.Ephemeral });
 }
 
-function getUserData(guildId, userId) {
-  if (!identidades[guildId]) identidades[guildId] = {};
-  if (!identidades[guildId][userId]) {
-    identidades[guildId][userId] = {
-      pjs: {
-        "1": { dni: null, carnetConducir: null, licenciaArmas: null },
-        "2": { dni: null, carnetConducir: null, licenciaArmas: null }
-      },
-      dinero: 6000,
-      lastSalary: null,
-      drogas: { marihuana: 0, cocaina: 0 } // AÑADIDO PARA IDEA E
-    };
-  } else {
-    if (typeof identidades[guildId][userId].dinero !== 'number') identidades[guildId][userId].dinero = 6000;
-    if (!identidades[guildId][userId].lastSalary) identidades[guildId][userId].lastSalary = null;
-    if (!identidades[guildId][userId].drogas) identidades[guildId][userId].drogas = { marihuana: 0, cocaina: 0 }; // AÑADIDO
-  }
-  return identidades[guildId][userId];
-}
-
 // ======================
 // COMANDOS DE SUSTANCIAS (IDEA E) - CORREGIDOS
 // ======================
@@ -2403,55 +2410,56 @@ async function handleVerDrogas(interaction) {
 }
 
 async function handleVerInventario(interaction) {
-  const target = interaction.options.getMember('usuario') || interaction.member;
-  const isSelf = target.id === interaction.user.id;
+    const target = interaction.options.getMember('usuario') || interaction.member;
+    const isSelf = target.id === interaction.user.id;
 
-  // Si no es él mismo, comprobar permisos
-  if (!isSelf && !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ 
-      content: '❌ Solo administradores pueden ver el inventario de otros usuarios.', 
-      flags: MessageFlags.Ephemeral 
-    });
-  }
+    // Verificar permisos
+    if (!isSelf && !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        return interaction.reply({
+            content: '❌ Solo administradores pueden ver el inventario de otros usuarios.',
+            flags: MessageFlags.Ephemeral
+        });
+    }
 
-  const userData = getUserData(interaction.guild.id, target.id);
+    const userData = getUserData(interaction.guild.id, target.id);
 
-  // Asegurar que existe inventario
-  if (!userData.inventario) userData.inventario = {};
+    // Asegurar que existan las propiedades
+    if (!userData.inventario) userData.inventario = {};
+    if (!userData.drogas) userData.drogas = { marihuana: 0, cocaina: 0 };
 
-  const embed = new EmbedBuilder()
-    .setTitle(`📦 Inventario de ${target.user.tag}`)
-    .setColor('#00AAFF')
-    .setThumbnail(target.user.displayAvatarURL())
-    .setTimestamp();
+    const embed = new EmbedBuilder()
+        .setTitle(`📦 Inventario de ${target.user.tag}`)
+        .setColor('#00AAFF')
+        .setThumbnail(target.user.displayAvatarURL())
+        .setTimestamp();
 
-  // Drogas
-  embed.addFields({
-    name: '🌿 Sustancias Ilegales',
-    value: `**Marihuana:** ${userData.drogas.marihuana || 0}g\n**Cocaína:** ${userData.drogas.cocaina || 0}g`,
-    inline: false
-  });
-
-  // Artículos del inventario
-  const items = Object.entries(userData.inventario)
-    .filter(([, cantidad]) => cantidad > 0)
-    .map(([nombre, cantidad]) => `**${nombre}** × ${cantidad}`);
-
-  if (items.length > 0) {
+    // === Sustancias Ilegales ===
     embed.addFields({
-      name: '🛠️ Artículos',
-      value: items.join('\n'),
-      inline: false
+        name: '🌿 Sustancias Ilegales',
+        value: `**Marihuana:** ${userData.drogas.marihuana || 0}g\n**Cocaína:** ${userData.drogas.cocaina || 0}g`,
+        inline: false
     });
-  } else {
-    embed.addFields({
-      name: '🛠️ Artículos',
-      value: 'No tienes artículos en tu inventario.',
-      inline: false
-    });
-  }
 
-  await interaction.reply({ embeds: [embed] });
+    // === Artículos del Inventario ===
+    const itemsList = Object.entries(userData.inventario)
+        .filter(([, cantidad]) => cantidad > 0)
+        .map(([nombre, cantidad]) => `**${nombre}** × ${cantidad}`);
+
+    if (itemsList.length > 0) {
+        embed.addFields({
+            name: '🛠️ Artículos',
+            value: itemsList.join('\n'),
+            inline: false
+        });
+    } else {
+        embed.addFields({
+            name: '🛠️ Artículos',
+            value: 'No tienes artículos en tu inventario.',
+            inline: false
+        });
+    }
+
+    await interaction.reply({ embeds: [embed] });
 }
 
 / ======================
@@ -2496,55 +2504,6 @@ async function handleAdminArticulo(interaction) {
 // ======================
 // VER INVENTARIO
 // ======================
-async function handleVerInventario(interaction) {
-  const target = interaction.options.getMember('usuario') || interaction.member;
-  const isSelf = target.id === interaction.user.id;
-
-  if (!isSelf && !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ 
-      content: '❌ Solo administradores pueden ver el inventario de otros.', 
-      flags: MessageFlags.Ephemeral 
-    });
-  }
-
-  const userData = getUserData(interaction.guild.id, target.id);
-  if (!userData.inventario) userData.inventario = {};
-
-  const embed = new EmbedBuilder()
-    .setTitle(`📦 Inventario de ${target.user.tag}`)
-    .setColor('#00AAFF')
-    .setThumbnail(target.user.displayAvatarURL())
-    .setTimestamp();
-
-  // Sustancias
-  embed.addFields({
-    name: '🌿 Sustancias',
-    value: `**Marihuana:** ${userData.drogas?.marihuana || 0}g\n**Cocaína:** ${userData.drogas?.cocaina || 0}g`,
-    inline: false
-  });
-
-  // Inventario normal
-  const itemsList = Object.entries(userData.inventario)
-    .filter(([, cant]) => cant > 0)
-    .map(([item, cant]) => `• **${item}** × ${cant}`);
-
-  if (itemsList.length > 0) {
-    embed.addFields({
-      name: '🛠️ Artículos',
-      value: itemsList.join('\n'),
-      inline: false
-    });
-  } else {
-    embed.addFields({
-      name: '🛠️ Artículos',
-      value: 'No tienes ningún artículo.',
-      inline: false
-    });
-  }
-
-  await interaction.reply({ embeds: [embed] });
-}
-
 
 // ======================
 // LOGIN DEL BOT
