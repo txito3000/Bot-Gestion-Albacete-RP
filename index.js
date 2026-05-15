@@ -2423,13 +2423,15 @@ async function handleVerDrogas(interaction) {
 
 
 // ======================
-// COMANDOS ADMIN - DROGAS, ARTÍCULOS E INVENTARIO
+// COMANDOS ADMIN - CORREGIDOS (ANTI UNKNOWN INTERACTION)
 // ======================
 
 async function handleAdminDrogas(interaction) {
   if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return interaction.reply({ content: '❌ Solo administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
   }
+
+  await interaction.deferReply();   // ← IMPORTANTE
 
   const target = interaction.options.getMember('usuario');
   const tipo = interaction.options.getString('tipo');
@@ -2447,7 +2449,7 @@ async function handleAdminDrogas(interaction) {
 
   guardarIdentidades();
 
-  await interaction.reply({
+  await interaction.editReply({
     embeds: [new EmbedBuilder()
       .setTitle('🔧 Admin - Drogas Actualizadas')
       .setColor(cantidad >= 0 ? '#00FF88' : '#FF0000')
@@ -2466,6 +2468,8 @@ async function handleAdminArticulo(interaction) {
     return interaction.reply({ content: '❌ Solo administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
   }
 
+  await interaction.deferReply();   // ← IMPORTANTE
+
   const target = interaction.options.getMember('usuario');
   const nombre = interaction.options.getString('nombre').trim();
   const cantidad = interaction.options.getInteger('cantidad');
@@ -2482,7 +2486,7 @@ async function handleAdminArticulo(interaction) {
 
   guardarIdentidades();
 
-  await interaction.reply({
+  await interaction.editReply({
     embeds: [new EmbedBuilder()
       .setTitle('🔧 Admin - Artículo Actualizado')
       .setColor(cantidad >= 0 ? '#00FF88' : '#FF8800')
@@ -2497,11 +2501,13 @@ async function handleAdminArticulo(interaction) {
 }
 
 async function handleVerInventario(interaction) {
+  await interaction.deferReply();   // ← IMPORTANTE
+
   const target = interaction.options.getMember('usuario') || interaction.member;
   const isSelf = target.id === interaction.user.id;
 
   if (!isSelf && !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo administradores pueden ver el inventario de otros usuarios.', flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: '❌ Solo administradores pueden ver el inventario de otros usuarios.' });
   }
 
   const userData = getUserData(interaction.guild.id, target.id);
@@ -2513,14 +2519,12 @@ async function handleVerInventario(interaction) {
     .setThumbnail(target.user.displayAvatarURL())
     .setTimestamp();
 
-  // Sustancias
   embed.addFields({
     name: '🌿 Sustancias Ilegales',
     value: `**Marihuana:** ${userData.drogas?.marihuana || 0}g\n**Cocaína:** ${userData.drogas?.cocaina || 0}g`,
     inline: false
   });
 
-  // Artículos
   const items = Object.entries(userData.inventario)
     .filter(([, cant]) => cant > 0)
     .map(([nombre, cant]) => `**${nombre}** × ${cant}`);
@@ -2531,11 +2535,8 @@ async function handleVerInventario(interaction) {
     inline: false
   });
 
-  await interaction.reply({ embeds: [embed] });
+  await interaction.editReply({ embeds: [embed] });
 }
-// ======================
-// VER INVENTARIO
-// ======================
 
 // ======================
 // LOGIN DEL BOT
