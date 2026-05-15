@@ -329,9 +329,13 @@ function guardarIdentidades() {
 
 function getUserData(guildId, userId) {
   if (!identidades[guildId]) identidades[guildId] = {};
+  
   if (!identidades[guildId][userId]) {
     identidades[guildId][userId] = {
-      pjs: { "1": { dni: null, carnetConducir: null, licenciaArmas: null }, "2": { ... } },
+      pjs: {
+        "1": { dni: null, carnetConducir: null, licenciaArmas: null },
+        "2": { dni: null, carnetConducir: null, licenciaArmas: null }
+      },
       dinero: 6000,
       lastSalary: null,
       drogas: { marihuana: 0, cocaina: 0 },
@@ -339,14 +343,22 @@ function getUserData(guildId, userId) {
     };
   } else {
     const data = identidades[guildId][userId];
+    
+    // Correcciones de seguridad
     if (typeof data.dinero !== 'number') data.dinero = 6000;
+    if (!data.lastSalary) data.lastSalary = null;
     if (!data.drogas) data.drogas = { marihuana: 0, cocaina: 0 };
     if (!data.inventario) data.inventario = {};
-    if (!data.pjs) data.pjs = { "1": {...}, "2": {...} };
+    
+    if (!data.pjs) {
+      data.pjs = {
+        "1": { dni: null, carnetConducir: null, licenciaArmas: null },
+        "2": { dni: null, carnetConducir: null, licenciaArmas: null }
+      };
+    }
   }
   return identidades[guildId][userId];
 }
-
 // ======================
 // EVENTO READY
 // ======================
