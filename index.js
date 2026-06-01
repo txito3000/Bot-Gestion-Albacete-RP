@@ -792,7 +792,7 @@ async function handlePujar(interaction) {
   await interaction.reply({ content: `✅ **Puja aceptada** en la subasta **${id}** por **$${cantidad.toLocaleString('es-ES')}**!` });
 }
 
-sync function finalizarSubasta(subastaId, clientParam) {
+async function finalizarSubasta(subastaId, clientParam) {
   const index = subastasGlobal.findIndex(s => s.id === subastaId);
   if (index === -1 || subastasGlobal[index].ended) return;
   const subasta = subastasGlobal[index];
