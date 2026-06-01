@@ -86,14 +86,30 @@ const CARNET_CHANNEL_ID = '1457570708497371332';
 const LICENCIA_CHANNEL_ID = '1493631768169939136';
 
 // ======================
-// ROLES AUTORIZADOS PARA POLICÍA
+// ROLES AUTORIZADOS PARA POLICÍA + staff
 // ======================
 const POLICE_ROLES = [
   '1457537988132343858',
   '1457538324578439396',
   '1467525875007230055'
 ];
+const STAFF_ROLES = [
+  '1511059878058262558',
+  '1510970950236241980',
+  '1511060516284661941',
+  '1511057046374449222',
+  '1511058581565476865',
+  '1511055519790665808',
+  '1510971942742790215',
+  '1510974456015753367'
+];
 
+// Función auxiliar para comprobar si es Staff
+function isStaff(member) {
+  return member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+         STAFF_ROLES.some(role => member.roles.cache.has(role)) ||
+         POLICE_ROLES.some(role => member.roles.cache.has(role));
+}
 // ======================
 // SISTEMA DE SANCIONES
 // ======================
@@ -341,23 +357,19 @@ function getUserData(guildId, userId) {
       drogas: { marihuana: 0, cocaina: 0 },
       inventario: {}
     };
-  } else {
-    const data = identidades[guildId][userId];
-    
-    // Correcciones de seguridad
-    if (typeof data.dinero !== 'number') data.dinero = 6000;
-    if (!data.lastSalary) data.lastSalary = null;
-    if (!data.drogas) data.drogas = { marihuana: 0, cocaina: 0 };
-    if (!data.inventario) data.inventario = {};
-    
-    if (!data.pjs) {
-      data.pjs = {
-        "1": { dni: null, carnetConducir: null, licenciaArmas: null },
-        "2": { dni: null, carnetConducir: null, licenciaArmas: null }
-      };
-    }
   }
-  return identidades[guildId][userId];
+
+  const data = identidades[guildId][userId];
+
+  if (typeof data.dinero !== 'number') data.dinero = 6000;
+  if (!data.lastSalary) data.lastSalary = null;
+  if (!data.drogas) data.drogas = { marihuana: 0, cocaina: 0 };
+  if (!data.inventario) data.inventario = {};
+  if (!data.pjs) {
+    data.pjs = { "1": {}, "2": {} };
+  }
+
+  return data;
 }
 // ======================
 // EVENTO READY
@@ -404,7 +416,7 @@ client.once(Events.ClientReady, async () => {
     new SlashCommandBuilder().setName('arrestar').setDescription('🚔 Realizar un arresto (solo Policía)'),
     new SlashCommandBuilder().setName('ver-dni').setDescription('🔍 Ver DNI de cualquier usuario (público)').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(opt => opt.setName('pj').setDescription('PJ 1 o 2').setRequired(true).addChoices({ name: 'PJ 1', value: '1' }, { name: 'PJ 2', value: '2' })),
     new SlashCommandBuilder().setName('balance').setDescription('💰 Ver tu dinero o el de otro usuario').addUserOption(opt => opt.setName('usuario').setDescription('Usuario (opcional)')),
-    new SlashCommandBuilder().setName('addmoney').setDescription('🔧 [ADMIN] Añadir o quitar dinero').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (positiva = añadir, negativa = quitar)').setRequired(true)),
+    new SlashCommandBuilder().setName('añadir-dinero').setDescription('[ADMIN] Añadir o quitar dinero').addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true)).addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (positiva = añadir, negativa = quitar)').setRequired(true)),
     new SlashCommandBuilder().setName('sueldo').setDescription('💼 Cobrar sueldo (cada 24 horas)'),
     new SlashCommandBuilder().setName('transferir').setDescription('💸 Transferir dinero a otro usuario').addUserOption(opt => opt.setName('usuario').setDescription('Destinatario').setRequired(true)).addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad a transferir').setRequired(true)),
     new SlashCommandBuilder().setName('apostar').setDescription('🎲 Apostar en cara o cruz (50/50)').addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad a apostar (mín. 100)').setRequired(true)).addStringOption(opt => opt.setName('opcion').setDescription('Cara o Cruz').setRequired(true).addChoices({ name: '🪙 Cara', value: 'cara' }, { name: '🪙 Cruz', value: 'cruz' })),
@@ -463,6 +475,25 @@ client.once(Events.ClientReady, async () => {
       .setName('ver-inventario')
       .setDescription('📦 Ver el inventario de un usuario')
       .addUserOption(opt => opt.setName('usuario').setDescription('Usuario (opcional, por defecto tú mismo)').setRequired(false)),
+    // === NUEVOS COMANDOS ===
+new SlashCommandBuilder()
+  .setName('editararticulo')
+  .setDescription('🔧 [ADMIN] Editar artículo de la tienda')
+  .addStringOption(opt => opt.setName('id').setDescription('ID del artículo').setRequired(true))
+  .addStringOption(opt => opt.setName('nombre').setDescription('Nuevo nombre').setRequired(false))
+  .addIntegerOption(opt => opt.setName('precio').setDescription('Nuevo precio').setRequired(false))
+  .addIntegerOption(opt => opt.setName('stock').setDescription('Nuevo stock').setRequired(false))
+  .addStringOption(opt => opt.setName('descripcion').setDescription('Nueva descripción').setRequired(false)),
+
+new SlashCommandBuilder()
+  .setName('valorarstaff')
+  .setDescription('⭐ Valorar a un miembro del Staff')
+  .addUserOption(opt => opt.setName('staff').setDescription('Miembro del Staff').setRequired(true))
+  .addIntegerOption(opt => opt.setName('puntuacion').setDescription('Puntuación 1-10').setRequired(true).setMinValue(1).setMaxValue(10))
+  .addStringOption(opt => opt.setName('comentario').setDescription('Comentario (opcional)').setRequired(false)),
+new SlashCommandBuilder()
+  .setName('topstaff')
+  .setDescription('🏆 Ver el Top Staff según valoraciones'),
   ];
 
   for (const guild of client.guilds.cache.values()) {
@@ -501,7 +532,7 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'arrestar': await handleArrestar(interaction); break;
         case 'ver-dni': await handleVerDniPublico(interaction); break;
         case 'balance': await handleBalance(interaction); break;
-        case 'addmoney': await handleAddMoney(interaction); break;
+        case 'añadir-dinero': await handleañadirdinero(interaction); break;
         case 'sueldo': await handleSueldo(interaction); break;
         case 'transferir': await handleTransferir(interaction); break;
         case 'apostar': await handleApostar(interaction); break;
@@ -533,6 +564,9 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'admin-drogas': await handleAdminDrogas(interaction); break;
         case 'admin-articulo': await handleAdminArticulo(interaction); break;
         case 'ver-inventario': await handleVerInventario(interaction); break;
+        case 'editararticulo': await handleEditarArticulo(interaction); break;
+        case 'valorarstaff': await handleValorarStaff(interaction); break;
+        case 'topstaff': await handleTopStaff(interaction); break;
       }
       return;
     }
@@ -647,6 +681,11 @@ async function handleComprar(interaction) {
 
   userData.dinero -= total;
   item.stock -= cantidad;
+
+  // === AÑADIR AL INVENTARIO ===
+  if (!userData.inventario) userData.inventario = {};
+  userData.inventario[item.nombre] = (userData.inventario[item.nombre] || 0) + cantidad;
+
   guardarTienda();
   guardarIdentidades();
 
@@ -753,7 +792,7 @@ async function handlePujar(interaction) {
   await interaction.reply({ content: `✅ **Puja aceptada** en la subasta **${id}** por **$${cantidad.toLocaleString('es-ES')}**!` });
 }
 
-async function finalizarSubasta(subastaId, clientParam) {
+sync function finalizarSubasta(subastaId, clientParam) {
   const index = subastasGlobal.findIndex(s => s.id === subastaId);
   if (index === -1 || subastasGlobal[index].ended) return;
   const subasta = subastasGlobal[index];
@@ -769,12 +808,19 @@ async function finalizarSubasta(subastaId, clientParam) {
 
   const sellerData = getUserData(subasta.guildId, subasta.sellerId);
   sellerData.dinero += subasta.currentBid;
+
+  // === AÑADIR ARTÍCULO AL GANADOR ===
+  const winnerData = getUserData(subasta.guildId, subasta.currentBidder);
+  if (!winnerData.inventario) winnerData.inventario = {};
+  winnerData.inventario[subasta.item] = (winnerData.inventario[subasta.item] || 0) + 1;
+
   guardarIdentidades();
 
   const embed = new EmbedBuilder()
     .setColor('#00ff00')
     .setTitle(`🎉 Subasta ${subasta.id} FINALIZADA`)
-    .setDescription(`**Ganador:** <@${subasta.currentBidder}>\n**Pagó:** ${subasta.currentBid} $\n**Vendedor:** <@${subasta.sellerId}>\n**Artículo:** ${subasta.item}`);
+    .setDescription(`**Ganador:** <@${subasta.currentBidder}>\n**Pagó:** $${subasta.currentBid.toLocaleString('es-ES')}\n**Artículo recibido:** ${subasta.item}`);
+
   canal.send({ embeds: [embed] });
 }
 
@@ -1855,7 +1901,7 @@ async function handleBalance(interaction) {
   await interaction.reply({ embeds: [embed] });
 }
 
-async function handleAddMoney(interaction) {
+async function handleañadirdinero(interaction) {
   if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return interaction.reply({ content: '❌ Solo administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
   }
@@ -2341,37 +2387,68 @@ async function handleMorosos(interaction) {
 
 async function handleProcesar(interaction) {
   const tipo = interaction.options.getString('tipo');
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
+  const userId = interaction.user.id;
+  const userData = getUserData(interaction.guild.id, userId);
 
-  let cantidadProcesada = 0;
-  let ganancia = 0;
-
-  if (tipo === 'marihuana') {
-    if (userData.drogas.marihuana <= 0) {
-      return interaction.reply({ content: '❌ No tienes marihuana para procesar.', flags: MessageFlags.Ephemeral });
-    }
-    cantidadProcesada = userData.drogas.marihuana;
-    ganancia = Math.floor(cantidadProcesada * 120); // Precio procesada
-    userData.drogas.marihuana = 0;
-  } else if (tipo === 'cocaina') {
-    if (userData.drogas.cocaina <= 0) {
-      return interaction.reply({ content: '❌ No tienes cocaína para procesar.', flags: MessageFlags.Ephemeral });
-    }
-    cantidadProcesada = userData.drogas.cocaina;
-    ganancia = Math.floor(cantidadProcesada * 280); // Precio procesada
-    userData.drogas.cocaina = 0;
+  if (procesosActivos.has(userId)) {
+    return interaction.reply({ 
+      content: '❌ **Ya tienes un proceso activo.** Debes esperar 1 hora.', 
+      flags: MessageFlags.Ephemeral 
+    });
   }
 
-  userData.dinero += ganancia;
-  guardarIdentidades();
+  let cantidadCruda = tipo === 'marihuana' ? userData.drogas.marihuana : userData.drogas.cocaina;
+
+  if (cantidadCruda <= 0) {
+    return interaction.reply({ 
+      content: `❌ No tienes ${tipo} cruda para procesar.`, 
+      flags: MessageFlags.Ephemeral 
+    });
+  }
 
   await interaction.reply({
-    content: `🌿 **Procesamiento completado**\n\n` +
-             `**Tipo:** ${tipo.toUpperCase()}\n` +
-             `**Cantidad procesada:** ${cantidadProcesada}g\n` +
-             `**Ganancia:** +**$${ganancia.toLocaleString('es-ES')}**\n` +
-             `**Nuevo balance:** $${userData.dinero.toLocaleString('es-ES')}`
+    content: `🧪 **Iniciando procesamiento de ${tipo.toUpperCase()}...**\n⏳ Este proceso tardará **1 hora**.`
   });
+
+  // Marcar proceso activo
+  procesosActivos.set(userId, { tipo, cantidad: cantidadCruda });
+
+  setTimeout(async () => {
+    procesosActivos.delete(userId);
+
+    const exito = Math.random() < 0.5; // 50% de éxito
+
+    if (!exito) {
+      // Fallo
+      if (tipo === 'marihuana') userData.drogas.marihuana = 0;
+      else userData.drogas.cocaina = 0;
+
+      guardarIdentidades();
+
+      await interaction.followUp({
+        content: `❌ **El procesamiento falló.** Perdiste toda tu ${tipo} cruda.`
+      });
+    } 
+    else {
+      // ÉXITO
+      const cantidadProcesada = cantidadCruda;
+      let ganancia = tipo === 'marihuana' ? Math.floor(cantidadProcesada * 120) : Math.floor(cantidadProcesada * 280);
+
+      if (tipo === 'marihuana') userData.drogas.marihuana = 0;
+      else userData.drogas.cocaina = 0;
+
+      userData.dinero += ganancia;
+      guardarIdentidades();
+
+      await interaction.followUp({
+        content: `✅ **¡PROCESAMIENTO EXITOSO!**\n\n` +
+                 `**Tipo:** ${tipo.toUpperCase()}\n` +
+                 `**Cantidad procesada:** ${cantidadProcesada}g\n` +
+                 `**Ganancia:** **+$${ganancia.toLocaleString('es-ES')}**\n` +
+                 `**Nuevo balance:** $${userData.dinero.toLocaleString('es-ES')}`
+      });
+    }
+  }, 3600000); // 1 HORA
 }
 
 async function handleVenderIlegal(interaction) {
@@ -2536,6 +2613,156 @@ async function handleVerInventario(interaction) {
   });
 
   await interaction.editReply({ embeds: [embed] });
+}
+
+// ======================
+// EDITAR ARTÍCULO TIENDA
+// ======================
+async function handleEditarArticulo(interaction) {
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: '❌ Solo administradores.', flags: MessageFlags.Ephemeral });
+  }
+
+  const id = interaction.options.getString('id');
+  const nombre = interaction.options.getString('nombre');
+  const precio = interaction.options.getInteger('precio');
+  const stock = interaction.options.getInteger('stock');
+  const descripcion = interaction.options.getString('descripcion');
+
+  const item = tiendaItems.find(i => i.id === id);
+  if (!item) return interaction.reply({ content: `❌ Artículo con ID **${id}** no encontrado.`, flags: MessageFlags.Ephemeral });
+
+  if (nombre) item.nombre = nombre;
+  if (precio) item.precio = precio;
+  if (stock !== null) item.stock = stock;
+  if (descripcion) item.descripcion = descripcion;
+
+  guardarTienda();
+
+  await interaction.reply({ content: `✅ Artículo **${id}** actualizado correctamente.` });
+}
+
+// ======================
+// VALORAR STAFF
+// ======================
+async function handleValorarStaff(interaction) {
+  const staff = interaction.options.getMember('staff');
+  const puntuacion = interaction.options.getInteger('puntuacion');
+  const comentario = interaction.options.getString('comentario') || 'Sin comentario';
+
+  if (!staff.roles.cache.some(r => r.name.toLowerCase().includes('staff') || r.name.toLowerCase().includes('admin'))) {
+    return interaction.reply({ content: '❌ Solo puedes valorar a miembros del Staff.', flags: MessageFlags.Ephemeral });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('⭐ Valoración de Staff')
+    .setColor(puntuacion >= 8 ? '#00FF88' : puntuacion >= 5 ? '#FFAA00' : '#FF0000')
+    .addFields(
+      { name: 'Staff', value: `${staff}`, inline: true },
+      { name: 'Puntuación', value: `**${puntuacion}/10** ⭐`, inline: true },
+      { name: 'Valorado por', value: `${interaction.user}`, inline: true },
+      { name: 'Comentario', value: comentario }
+    )
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [embed] });
+}
+
+// ======================
+// SISTEMA DE VALORACIONES STAFF
+// ======================
+const valoracionesStaff = {}; // staffId -> { totalPuntos: number, valoraciones: number }
+
+function guardarValoraciones() {
+  try {
+    fs.writeFileSync(path.join(__dirname, 'valoraciones_staff.json'), JSON.stringify(valoracionesStaff, null, 4));
+  } catch (e) {}
+}
+
+function cargarValoraciones() {
+  const file = path.join(__dirname, 'valoraciones_staff.json');
+  if (fs.existsSync(file)) {
+    try {
+      Object.assign(valoracionesStaff, JSON.parse(fs.readFileSync(file, 'utf-8')));
+    } catch (e) {}
+  }
+}
+
+// Cargar al iniciar (añadir en ClientReady)
+cargarValoraciones();
+
+// ======================
+// TOP STAFF
+// ======================
+async function handleTopStaff(interaction) {
+  await interaction.deferReply();
+
+  const ranking = Object.entries(valoracionesStaff)
+    .map(([staffId, data]) => ({
+      staffId,
+      promedio: data.valoraciones > 0 ? (data.totalPuntos / data.valoraciones).toFixed(2) : 0,
+      total: data.valoraciones
+    }))
+    .sort((a, b) => b.promedio - a.promedio)
+    .slice(0, 10);
+
+  if (ranking.length === 0) {
+    return interaction.editReply('📭 Aún no hay valoraciones de Staff.');
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('🏆 TOP STAFF - ALBACETE RP')
+    .setColor(0xFFD700)
+    .setTimestamp();
+
+  for (let i = 0; i < ranking.length; i++) {
+    const member = interaction.guild.members.cache.get(ranking[i].staffId);
+    const name = member ? member.user.tag : `Staff ${ranking[i].staffId}`;
+    const medalla = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**#${i+1}**`;
+
+    embed.addFields({
+      name: `${medalla} ${name}`,
+      value: `**${ranking[i].promedio} ⭐** (${ranking[i].total} valoraciones)`,
+      inline: false
+    });
+  }
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
+// ======================
+// VALORAR STAFF (Actualizado)
+// ======================
+async function handleValorarStaff(interaction) {
+  const staff = interaction.options.getMember('staff');
+  const puntuacion = interaction.options.getInteger('puntuacion');
+  const comentario = interaction.options.getString('comentario') || 'Sin comentario';
+
+  if (!isStaff(staff)) {
+    return interaction.reply({ content: '❌ Solo puedes valorar a miembros del Staff.', flags: MessageFlags.Ephemeral });
+  }
+
+  if (!valoracionesStaff[staff.id]) {
+    valoracionesStaff[staff.id] = { totalPuntos: 0, valoraciones: 0 };
+  }
+
+  valoracionesStaff[staff.id].totalPuntos += puntuacion;
+  valoracionesStaff[staff.id].valoraciones += 1;
+
+  guardarValoraciones();
+
+  const embed = new EmbedBuilder()
+    .setTitle('⭐ Nueva Valoración de Staff')
+    .setColor(puntuacion >= 8 ? '#00FF88' : puntuacion >= 5 ? '#FFAA00' : '#FF0000')
+    .addFields(
+      { name: 'Staff', value: `${staff}`, inline: true },
+      { name: 'Puntuación', value: `**${puntuacion}/10**`, inline: true },
+      { name: 'Valorado por', value: `${interaction.user}`, inline: true },
+      { name: 'Comentario', value: comentario, inline: false }
+    )
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [embed] });
 }
 
 // ======================
