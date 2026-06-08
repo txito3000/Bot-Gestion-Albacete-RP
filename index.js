@@ -93,6 +93,13 @@ const POLICE_ROLES = [
   '1457538324578439396',
   '1467525875007230055'
 ];
+
+// ======================
+// ROLES PARA DOCUMENTOS
+// ======================
+const ROLE_DNI = '1511065335145431050';
+const ROLE_CARNET = '1511066018154418407';
+const ROLE_LICENCIA = '1462570820650926100';
 const STAFF_ROLES = [
   '1511059878058262558',
   '1510970950236241980',
@@ -354,7 +361,6 @@ function getUserData(guildId, userId) {
       },
       dinero: 6000,
       lastSalary: null,
-      drogas: { marihuana: 0, cocaina: 0 },
       inventario: {}
     };
   }
@@ -449,23 +455,6 @@ client.once(Events.ClientReady, async () => {
     // Lista de morosos para el banco (Idea A)
     new SlashCommandBuilder().setName('morosos').setDescription('🏦 [Banco] Ver lista de personas con préstamos vencidos'),
     new SlashCommandBuilder()
-  .setName('drogas')
-  .setDescription('🌿 Ver tus sustancias'),
-    // Comandos de drogas (Idea E)
-    new SlashCommandBuilder().setName('procesar').setDescription('🌿 Procesar sustancias ilegales').addStringOption(opt => opt.setName('tipo').setDescription('Tipo de sustancia').setRequired(true).addChoices({ name: '🌿 Marihuana', value: 'marihuana' }, { name: '❄️ Cocaína', value: 'cocaina' })),
-    new SlashCommandBuilder().setName('vender-ilegal').setDescription('🕴️ Vender sustancias en el mercado negro').addStringOption(opt => opt.setName('tipo').setDescription('Tipo de sustancia a vender').setRequired(true).addChoices({ name: '🌿 Marihuana', value: 'marihuana' }, { name: '❄️ Cocaína', value: 'cocaina' })),
-    new SlashCommandBuilder()
-      .setName('admin-drogas')
-      .setDescription('🔧 [ADMIN] Añadir o quitar drogas a un usuario')
-      .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
-      .addStringOption(opt => opt.setName('tipo').setDescription('Tipo de droga').setRequired(true)
-        .addChoices(
-          { name: '🌿 Marihuana', value: 'marihuana' },
-          { name: '❄️ Cocaína', value: 'cocaina' }
-        ))
-      .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad (positiva = añadir, negativa = quitar)').setRequired(true)),
-
-    new SlashCommandBuilder()
       .setName('admin-articulo')
       .setDescription('🔧 [ADMIN] Añadir o quitar un artículo del inventario de un usuario')
       .addUserOption(opt => opt.setName('usuario').setDescription('Usuario').setRequired(true))
@@ -558,10 +547,6 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'ver-carnet-policia': await handleVerCarnetPolicia(interaction); break;
         case 'ver-licencia-policia': await handleVerLicenciaPolicia(interaction); break;
         case 'morosos': await handleMorosos(interaction); break;
-        case 'procesar': await handleProcesar(interaction); break;
-        case 'vender-ilegal': await handleVenderIlegal(interaction); break;
-        case 'drogas': await handleVerDrogas(interaction); break;  
-        case 'admin-drogas': await handleAdminDrogas(interaction); break;
         case 'admin-articulo': await handleAdminArticulo(interaction); break;
         case 'ver-inventario': await handleVerInventario(interaction); break;
         case 'editararticulo': await handleEditarArticulo(interaction); break;
@@ -2379,240 +2364,6 @@ async function handleMorosos(interaction) {
 
   let desc = morosos.map(p => `**ID:** ${p.id} | <@${p.userId}> | **Deuda:** ${p.aPagar}€ | **Venció:** <t:${Math.floor(p.fechaLimite/1000)}:R>`).join('\n');
   await interaction.reply({ embeds: [new EmbedBuilder().setTitle('🚨 Lista Negra de Morosos').setDescription(desc).setColor('#FF0000')], flags: MessageFlags.Ephemeral });
-}
-
-// ======================
-// COMANDOS DE SUSTANCIAS (IDEA E) - CORREGIDOS
-// ======================
-
-async function handleProcesar(interaction) {
-  const tipo = interaction.options.getString('tipo');
-  const userId = interaction.user.id;
-  const userData = getUserData(interaction.guild.id, userId);
-
-  if (procesosActivos.has(userId)) {
-    return interaction.reply({ 
-      content: '❌ **Ya tienes un proceso activo.** Debes esperar 1 hora.', 
-      flags: MessageFlags.Ephemeral 
-    });
-  }
-
-  let cantidadCruda = tipo === 'marihuana' ? userData.drogas.marihuana : userData.drogas.cocaina;
-
-  if (cantidadCruda <= 0) {
-    return interaction.reply({ 
-      content: `❌ No tienes ${tipo} cruda para procesar.`, 
-      flags: MessageFlags.Ephemeral 
-    });
-  }
-
-  await interaction.reply({
-    content: `🧪 **Iniciando procesamiento de ${tipo.toUpperCase()}...**\n⏳ Este proceso tardará **1 hora**.`
-  });
-
-  // Marcar proceso activo
-  procesosActivos.set(userId, { tipo, cantidad: cantidadCruda });
-
-  setTimeout(async () => {
-    procesosActivos.delete(userId);
-
-    const exito = Math.random() < 0.5; // 50% de éxito
-
-    if (!exito) {
-      // Fallo
-      if (tipo === 'marihuana') userData.drogas.marihuana = 0;
-      else userData.drogas.cocaina = 0;
-
-      guardarIdentidades();
-
-      await interaction.followUp({
-        content: `❌ **El procesamiento falló.** Perdiste toda tu ${tipo} cruda.`
-      });
-    } 
-    else {
-      // ÉXITO
-      const cantidadProcesada = cantidadCruda;
-      let ganancia = tipo === 'marihuana' ? Math.floor(cantidadProcesada * 120) : Math.floor(cantidadProcesada * 280);
-
-      if (tipo === 'marihuana') userData.drogas.marihuana = 0;
-      else userData.drogas.cocaina = 0;
-
-      userData.dinero += ganancia;
-      guardarIdentidades();
-
-      await interaction.followUp({
-        content: `✅ **¡PROCESAMIENTO EXITOSO!**\n\n` +
-                 `**Tipo:** ${tipo.toUpperCase()}\n` +
-                 `**Cantidad procesada:** ${cantidadProcesada}g\n` +
-                 `**Ganancia:** **+$${ganancia.toLocaleString('es-ES')}**\n` +
-                 `**Nuevo balance:** $${userData.dinero.toLocaleString('es-ES')}`
-      });
-    }
-  }, 3600000); // 1 HORA
-}
-
-async function handleVenderIlegal(interaction) {
-  const tipo = interaction.options.getString('tipo');
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-
-  let cantidad = 0;
-  let precioPorUnidad = 0;
-
-  if (tipo === 'marihuana') {
-    cantidad = userData.drogas.marihuana;
-    precioPorUnidad = 80;
-    if (cantidad <= 0) return interaction.reply({ content: '❌ No tienes marihuana para vender.', flags: MessageFlags.Ephemeral });
-    userData.drogas.marihuana = 0;
-  } else if (tipo === 'cocaina') {
-    cantidad = userData.drogas.cocaina;
-    precioPorUnidad = 200;
-    if (cantidad <= 0) return interaction.reply({ content: '❌ No tienes cocaína para vender.', flags: MessageFlags.Ephemeral });
-    userData.drogas.cocaina = 0;
-  }
-
-  const total = cantidad * precioPorUnidad;
-  userData.dinero += total;
-  guardarIdentidades();
-
-  await interaction.reply({
-    content: `🕴️ **Venta en mercado negro realizada**\n\n` +
-             `**Tipo:** ${tipo.toUpperCase()}\n` +
-             `**Cantidad vendida:** ${cantidad}g\n` +
-             `**Precio por unidad:** $${precioPorUnidad}\n` +
-             `**Total recibido:** **$${total.toLocaleString('es-ES')}**\n` +
-             `**Nuevo balance:** $${userData.dinero.toLocaleString('es-ES')}`
-  });
-}
-
-async function handleVerDrogas(interaction) {
-  const userData = getUserData(interaction.guild.id, interaction.user.id);
-  await interaction.reply({
-    embeds: [new EmbedBuilder()
-      .setTitle('🌿 Tus Sustancias')
-      .setColor('#00FF88')
-      .addFields(
-        { name: '🌿 Marihuana', value: `${userData.drogas.marihuana}g`, inline: true },
-        { name: '❄️ Cocaína', value: `${userData.drogas.cocaina}g`, inline: true }
-      )
-    ]
-  });
-}
-
-
-// ======================
-// COMANDOS ADMIN - CORREGIDOS (ANTI UNKNOWN INTERACTION)
-// ======================
-
-async function handleAdminDrogas(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
-  }
-
-  await interaction.deferReply();   // ← IMPORTANTE
-
-  const target = interaction.options.getMember('usuario');
-  const tipo = interaction.options.getString('tipo');
-  const cantidad = interaction.options.getInteger('cantidad');
-
-  const userData = getUserData(interaction.guild.id, target.id);
-
-  if (tipo === 'marihuana') {
-    userData.drogas.marihuana = (userData.drogas.marihuana || 0) + cantidad;
-    if (userData.drogas.marihuana < 0) userData.drogas.marihuana = 0;
-  } else if (tipo === 'cocaina') {
-    userData.drogas.cocaina = (userData.drogas.cocaina || 0) + cantidad;
-    if (userData.drogas.cocaina < 0) userData.drogas.cocaina = 0;
-  }
-
-  guardarIdentidades();
-
-  await interaction.editReply({
-    embeds: [new EmbedBuilder()
-      .setTitle('🔧 Admin - Drogas Actualizadas')
-      .setColor(cantidad >= 0 ? '#00FF88' : '#FF0000')
-      .addFields(
-        { name: 'Usuario', value: `${target}`, inline: true },
-        { name: 'Droga', value: tipo === 'marihuana' ? '🌿 Marihuana' : '❄️ Cocaína', inline: true },
-        { name: 'Cantidad', value: `${cantidad >= 0 ? '+' : ''}${cantidad}`, inline: true },
-        { name: 'Nuevo stock', value: `${tipo === 'marihuana' ? userData.drogas.marihuana : userData.drogas.cocaina}g`, inline: false }
-      )
-    ]
-  });
-}
-
-async function handleAdminArticulo(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: '❌ Solo administradores pueden usar este comando.', flags: MessageFlags.Ephemeral });
-  }
-
-  await interaction.deferReply();   // ← IMPORTANTE
-
-  const target = interaction.options.getMember('usuario');
-  const nombre = interaction.options.getString('nombre').trim();
-  const cantidad = interaction.options.getInteger('cantidad');
-
-  const userData = getUserData(interaction.guild.id, target.id);
-  if (!userData.inventario) userData.inventario = {};
-
-  if (!userData.inventario[nombre]) userData.inventario[nombre] = 0;
-  userData.inventario[nombre] += cantidad;
-
-  if (userData.inventario[nombre] <= 0) {
-    delete userData.inventario[nombre];
-  }
-
-  guardarIdentidades();
-
-  await interaction.editReply({
-    embeds: [new EmbedBuilder()
-      .setTitle('🔧 Admin - Artículo Actualizado')
-      .setColor(cantidad >= 0 ? '#00FF88' : '#FF8800')
-      .addFields(
-        { name: 'Usuario', value: `${target}`, inline: true },
-        { name: 'Artículo', value: nombre, inline: true },
-        { name: 'Cantidad', value: `${cantidad >= 0 ? '+' : ''}${cantidad}`, inline: true },
-        { name: 'Stock Actual', value: `${userData.inventario[nombre] || 0}`, inline: false }
-      )
-    ]
-  });
-}
-
-async function handleVerInventario(interaction) {
-  await interaction.deferReply();   // ← IMPORTANTE
-
-  const target = interaction.options.getMember('usuario') || interaction.member;
-  const isSelf = target.id === interaction.user.id;
-
-  if (!isSelf && !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.editReply({ content: '❌ Solo administradores pueden ver el inventario de otros usuarios.' });
-  }
-
-  const userData = getUserData(interaction.guild.id, target.id);
-  if (!userData.inventario) userData.inventario = {};
-
-  const embed = new EmbedBuilder()
-    .setTitle(`📦 Inventario de ${target.user.tag}`)
-    .setColor('#00AAFF')
-    .setThumbnail(target.user.displayAvatarURL())
-    .setTimestamp();
-
-  embed.addFields({
-    name: '🌿 Sustancias Ilegales',
-    value: `**Marihuana:** ${userData.drogas?.marihuana || 0}g\n**Cocaína:** ${userData.drogas?.cocaina || 0}g`,
-    inline: false
-  });
-
-  const items = Object.entries(userData.inventario)
-    .filter(([, cant]) => cant > 0)
-    .map(([nombre, cant]) => `**${nombre}** × ${cant}`);
-
-  embed.addFields({
-    name: '🛠️ Artículos',
-    value: items.length > 0 ? items.join('\n') : 'No tienes artículos.',
-    inline: false
-  });
-
-  await interaction.editReply({ embeds: [embed] });
 }
 
 // ======================
